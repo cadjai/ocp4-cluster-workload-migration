@@ -137,10 +137,13 @@
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator install check tasks'
       ansible.builtin.import_tasks: tasks/ensure-oadp-operator-is-installed.yml
+      vars:
+        oadp_backup_ns: '{{ oadp_restore_ns }}'
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP restore config tasks'
       ansible.builtin.import_tasks: tasks/configure-oadp-restore.yml
       vars:
         add_restore: 'true'
         add_oadp_schedule: 'false'
+        oadp_backup_ns: '{{ oadp_restore_ns }}'
 

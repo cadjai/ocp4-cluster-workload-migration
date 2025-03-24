@@ -1,7 +1,7 @@
 apiVersion: velero.io/v1
 kind: Restore
 metadata:
-  name: restore-{{ backup_name }}
+  name: {{ restore_name }}
   namespace: {{ oadp_restore_ns }} 
 spec:
 {% if oadp_schedule_name is defined and oadp_schedule_name != '' %}

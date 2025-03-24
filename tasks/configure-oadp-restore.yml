@@ -86,7 +86,7 @@
           ansible.builtin.shell: >
             {{ openshift_cli }} get cm openshift-service-ca.crt  -n {{ oadp_restore_ns }} -o jsonpath='{.data.service-ca\.crt}' | base64 -w0; echo 
           register: ocp_svc_cert_b64_out
-        - name: '{{ ansible_name_module }} | set_fact | restore_name '
+        - name: '{{ ansible_name_module }} | set_fact | CA Cert B64 '
           ansible.builtin.set_fact:
             odf_ca_cert_b64: "{{ ocp_svc_cert_b64_out.stdout }}"
           when:
@@ -122,10 +122,10 @@
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-dataprotectionapplication-cr.yaml"
         force: yes
       vars:
-        oadp_restore_ns: '{{ oadp_restore_ns }}'
+        oadp_backup_ns: '{{ oadp_restore_ns }}'
         s3url: '{{ oadp_s3url }}'
         bucket_name: '{{ oadp_s3_bucket }}'
-        restore_prefix: '{{ oadp_restore_prefix }}'
+        backup_prefix: '{{ oadp_restore_prefix }}'
         bucket_region: '{{ oadp_bucket_region }}'
       register: oadp_dpa_manifest_copied
 
@@ -170,7 +170,7 @@
 
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP DPA'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-dataprotectionapplication-cr.yaml 
+        {{ openshift_cli }} apply -f {{ oadp_dpa_manifest_copied.dest }} 
       when:
         - oadp_dpa_manifest_copied is defined
         - oadp_dpa_manifest_copied.dest is defined
@@ -212,12 +212,16 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-schedule CR '
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-schedule-cr.yaml -n {{ oadp_restore_ns }}
+        {{ openshift_cli }} apply -f {{ oadp_schedule_cr_copied.dest }} -n {{ oadp_restore_ns }}
       when:
         - add_oadp_schedule is defined
         - add_oadp_schedule | bool 
         - oadp_storage_restore_location_out.stdout is defined
-        - oadp_storage_restore_location_out.stdout != ''
+        - oadp_storage_restore_location_out.stdout !='
+        - oadp_schedule_cr_copied is defined
+        - oadp_schedule_cr_copied.dest is defined
+        - oadp_schedule_cr_copied.state is defined
+        - "'file' in oadp_schedule_cr_copied.state"
       register: oadp_schedule_cr_applied
 
     - name: '{{ ansible_name_module }} | template | Render oadp-restore CR'
@@ -229,10 +233,14 @@
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-restore CR '
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-cr.yaml -n {{ oadp_restore_ns }}
+        {{ openshift_cli }} apply -f {{ oadp_restore_cr_copied.dest }} -n {{ oadp_restore_ns }}
       when:
         - oadp_storage_restore_location_out.stdout is defined
         - oadp_storage_restore_location_out.stdout != ''
+        - oadp_restore_cr_copied is defined
+        - oadp_restore_cr_copied.dest is defined
+        - oadp_restore_cr_copied.state is defined
+        - "'file' in oadp_restore_cr_copied.state"
       register: oadp_restore_cr_applied
 
     - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
