@@ -1,0 +1,85 @@
+apiVersion: oadp.openshift.io/v1alpha1
+kind: DataProtectionApplication
+metadata:
+  name: {{ backup_name }}
+  namespace: {{ oadp_backup_ns }} 
+spec:
+  backupLocations:
+    - velero:
+        config:
+{% if add_odf_ca_cert is defined and add_odf_ca_cert | bool and odf_ca_cert_b64 is defined and odf_ca_cert_b64 != '' %}
+          insecureSkipTLSVerify: 'false'
+{% else %}
+          insecureSkipTLSVerify: 'true'
+{% endif %}
+          profile: default
+          region: {{ bucket_region }} 
+          s3ForcePathStyle: 'true'
+          s3Url: 'https://{{ s3url }}'
+        credential:
+          key: cloud
+          name: {{ oadp_bucket_secret_name | d('cloud-credentials', true) }}
+        default: true
+        objectStorage:
+          bucket: {{ bucket_name }}
+          prefix: {{ backup_prefix }} 
+{% if add_odf_ca_cert is defined and add_odf_ca_cert | bool and odf_ca_cert_b64 is defined and odf_ca_cert_b64 != '' %}
+          caCert: {{ odf_ca_cert_b64 }} 
+{% endif %}
+        provider: aws
+  configuration:
+    nodeAgent:
+      enable: true
+      podConfig:
+        tolerations:
+          - effect: NoSchedule
+            key: node-role.kubernetes.io/master
+            operator: Exists
+          - effect: NoSchedule
+            key: node.ocs.openshift.io/storage
+            operator: Exists
+          - effect: NoSchedule
+            key: devspaces
+            operator: Exists
+          - effect: NoExecute
+            key: devspaces
+            operator: Exists
+          - effect: NoSchedule
+            key: gpu
+            operator: Exists
+          - effect: NoExecute
+            key: gpu
+            operator: Exists
+          - effect: NoSchedule
+            key: infra
+            operator: Exists
+          - effect: NoExecute
+            key: infra
+            operator: Exists
+      timeout: {{ oadp_dpa_timeout | d('5h', true) }}
+      uploaderType: kopia
+    velero:
+      args:
+        default-item-operation-timeout: 14400000000000
+        default-repo-maintain-frequency: 14400000000000
+        garbage-collection-frequency: 14400000000000
+        resource-timeout: 3600000000000
+        terminating-resource-timeout: 3600000000000
+      defaultItemOperationTimeout: {{ oadp_velero_item_op_timeout | d('4h', true) }}
+      defaultPlugins:
+        - openshift
+        - aws
+        - kubevirt
+        - csi
+      defaultSnapshotMoveData: true
+      defaultVolumesToFSBackup: false
+      disableInformerCache: true
+      podConfig:
+        resourceAllocations:
+          limits:
+            cpu: {{ oadp_velero_pod_cpu_limit | d('4', true) }}
+            memory: {{ oadp_velero_pod_mem_limit | d('8Gi', true) }}
+          requests:
+            cpu: {{ oadp_velero_pod_cpu_request | d('2', true) }}
+            memory: {{ oadp_velero_pod_mem_request | d('4Gi', true) }}
+      resourceTimeout: 30m

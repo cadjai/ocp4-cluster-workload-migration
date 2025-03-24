@@ -1,0 +1,74 @@
+- name: ' Konductor | Provision UPI Infra | retrieve-and-clean-previous-restore-data-from-destination-cluster.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Retrieve and clean old restore data from Destination Cluster"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - restore_dest_cluster_console_url is defined
+              - restore_dest_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - restore_dest_cluster_token is defined
+              - restore_dest_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            restore_dest_cluster_console_port: '6443'
+          when:
+            - not restore_dest_cluster_console_port is defined or restore_dest_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | assert | the Backup Namespace on the Source Cluster is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_namespace is defined
+              - backup_src_namespace != ''
+            msg: "The Source cluster backup namespace is required"
+          when:
+            -  not namespace_list_targeted is defined or namespace_list_targeted | d([],true) | length == 0
+
+        - name: '{{ ansible_name_module }} | assert | the Backup CR name on the Source Cluster is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_cr_name is defined
+              - backup_cr_name != ''
+            msg: "The backup CR name is required"
+          when:
+            -  not namespace_list_targeted is defined or namespace_list_targeted | d([],true) | length == 0
+
+        - name: '{{ ansible_name_module }} | assert | the List of targeted Namespace to be restored is defined'
+          ansible.builtin.assert:
+            that:
+              - namespace_list_targeted is defined
+              - namespace_list_targeted != ''
+            msg: "The list of targeted namespaces to be restored is required"
+          when:
+            - not backup_cr_name is defined
+            - not backup_src_namespace is defined
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Old Restore Info additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-old-oadp-restore-info-from-destination-cluster.yml 
+      vars:
+        skip_api_login_logout: 'true'
+        apply_ns_exlusion: 'true'
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import Restore Target NS Info retrieval additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-old-oadp-restore-project-info-from-destination-cluster.yml
+      vars:
+        skip_api_login_logout: 'true'
+

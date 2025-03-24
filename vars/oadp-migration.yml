@@ -1,0 +1,108 @@
+---
+oadp_backup_ns: 'migration'
+oadp_operator:      ### name of the operator as it was used to mirror the operator
+  name: 'redhat-oadp-operator'
+  group_name: 'redhat-oadp-operator-group'
+  catalog_name: 'custom-redhat-oadp-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+  sub_channel: 'stable-1.4'
+  sub_version: ''
+  deploy_namespace: '{{ oadp_backup_ns }}'
+  target_namespace: '{{ oadp_backup_ns }}' ### values are all, empty or list of ns names
+  deploy_namespace_description: '{{ oadp_backup_ns }}'
+  patch_namespace: 'true'
+  patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+  patch_namespace_annotations: '{"openshift.io/node-selector": ""}'
+  deploy: 'true'
+  create_namespace: 'true'
+  create_catalog: 'false'
+  create_catalog_group: 'true'
+  index_image: 'redhat-oadp-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+  create_customresource: 'true'
+oadp_velero_pod_cpu_limit: '4'
+oadp_velero_pod_mem_limit: '8Gi'
+oadp_velero_pod_cpu_request: '2'
+oadp_velero_pod_mem_request: '4Gi'
+oadp_velero_item_op_timeout: '4h'
+oadp_dpa_timeout: '5h'
+oadp_bucket_access_key: ''
+oadp_bucket_access_secret: ''
+oadp_s3_bucket: ''
+oadp_bucket_region: 'us-east-1'
+oadp_backup_prefix: ''
+oadp_bucket_secret_name: 'cloud-credentials'
+add_backup: 'true'
+backup_name: ''
+cluster_name: ''
+oadp_s3url: ''   ## api URL without port
+backup_bucket_namespace: ''
+backup_bucket_name: '{{ oadp_s3_bucket }}'
+oadp_cron_schedule_expression: '30 3 * * *'
+namespace_list: []
+apply_ns_exlusion: 'true'
+excluded_ns:
+  - "*-backup*"
+  - "etcd-backup"
+  - "ansible-automation-platform"
+  - "clusterresourceoverride-operator"
+  - "default"
+  - "hive"
+  - "kube-*"
+  - "local-quay"
+  - "multicluster-engine"
+  - "nvidia-gpu-*"
+  - "open-cluster-management-*"
+  - "openshift-*"
+  - "sso"
+  - "redhat-marketplace"
+excluded_resources_list:
+  - events
+  - backups
+  - restores
+  - resticrepositories
+  - applicationsets
+  - hostsubnets
+  - networks
+  - apiservers
+  - authentications
+  - builds
+  - clusteroperators
+  - clusterserviceversions
+  - clusterversions
+  - consoles
+  - dnss
+  - featureGates
+  - infrastructures
+  - oauths
+  - operatorhubs
+  - projects
+  - proxies
+  - schedulers
+  - clusternetworks
+  - flowschemas
+  - validatingwebhookconfigurations
+  - mutatingwebhookconfigurations
+  - users
+  - groups
+  - identities
+  - apiservices
+  - namespaces
+  - installplans
+  - operatorgroups
+  - catalogsources
+  - imagetags
+  - subscriptions
+  - multiclusterhubs
+  - ingresscontrollers
+  - operatorconditions
+  - nodes
+apply_oadp_exclusion_label: 'true'
+oadp_exclusion_add_label: 'velero.io/exclude-from-backup=true'
+oadp_exclusion_remove_label: 'velero.io/exclude-from-backup-'
+restore_name: ''
+oadp_restore_ns: ''
+add_odf_ca_cert: 'false'
+add_oadp_sc_change_cm: 'true'
+add_restore: 'true'
+add_oadp_schedule: 'false'
+oadp_restore_cs_name: 'gp3-csi'
+label_non_running_pods: 'true'

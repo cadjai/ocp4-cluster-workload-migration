@@ -1,0 +1,11 @@
+apiVersion: velero.io/v1
+kind: DeleteBackupRequest
+metadata:
+  name: {{ backup_name }}-dbr 
+  namespace: {{ oadp_backup_ns }} 
+  labels:
+    velero.io/backup-name: {{ backup_name }} 
+    velero.io/backup-uid: {{ backup_uid }} 
+spec:
+  backupName: {{ backup_name }}
+

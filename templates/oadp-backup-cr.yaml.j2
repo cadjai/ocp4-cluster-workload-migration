@@ -1,0 +1,15 @@
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  name: {{ backup_name }}
+  labels:
+    velero.io/storage-location: default
+  namespace: {{ oadp_backup_ns }} 
+spec:
+  hooks: {}
+  includedNamespaces:
+    {{ namespace_list | to_nice_yaml | indent(4, false) }}
+  includeClusterResources: true
+  defaultVolumesToRestic: true
+  storageLocation: {{ oadp_storage_backup_location }} 
+  ttl: 720h0m0s

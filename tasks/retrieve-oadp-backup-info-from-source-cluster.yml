@@ -1,0 +1,111 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print Backup Info'
+  when:
+    - retrieve_backup_info is defined 
+    - retrieve_backup_info | bool 
+  block:
+    - name: '{{ ansible_name_module }} | set backup namespace if not provided'
+      ansible.builtin.set_fact:
+        backup_src_namespace: "{{ 'openshift-migration' if (is_mtc_backup is defined and is_mtc_backup | bool) else 'openshift-adp' }}"
+      when:
+        - not backup_src_namespace is defined or backup_src_namespace == ''
+
+    - name: '{{ ansible_name_module }} | Retrieve DataUpload info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get dataupload --no-headers -n {{ backup_src_namespace }} | awk '{print $1}' 
+      register: dup_list_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve DataUpload status info'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get dataupload {{ item }} -n {{ backup_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}' 
+      loop: "{{ dup_list_retrieved.stdout_lines }}"
+      when:
+        - dup_list_retrieved is defined
+        - dup_list_retrieved.rc is defined
+        - dup_list_retrieved.rc == 0 
+        - dup_list_retrieved.stdout_lines is defined
+        - dup_list_retrieved.stdout_lines | length > 0
+      register: dup_status_retrieved 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all dataupload count output '
+      ansible.builtin.debug:
+        msg: "The number of all backup data uploads  is : {{ dup_list_retrieved.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed dataupload info output '
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      when:
+        - dup_status_retrieved is defined
+        - dup_status_retrieved.results is defined
+        - dup_status_retrieved.results | length > 0 
+        - item is defined
+        - item.stdout is defined
+        - item.stdout != '' 
+        - "'failed' in item.stdout"
+      loop: "{{ dup_status_retrieved.results }}"
+
+    - name: '{{ ansible_name_module }} | Retrieve velero info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod --no-headers -n {{ backup_src_namespace }} | grep velero | awk '{print $1}' 
+      register: velero_po_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve velero pod phase '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ backup_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}'  
+      when:
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0 
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != '' 
+      register: velero_po_phase_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve velero backup error '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} logs {{ velero_po_retrieved.stdout }} -n {{ backup_src_namespace }} | grep -i error  
+      when:
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0 
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != '' 
+      register: velero_po_errors_retrieved 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  velero pod phase output '
+      ansible.builtin.debug:
+        msg: "The velero phase is : {{ velero_po_phase_retrieved.stdout }}"
+        verbosity: 2
+      when:
+        - velero_po_phase_retrieved is defined
+        - velero_po_phase_retrieved.rc is defined
+        - velero_po_phase_retrieved.rc == 0 
+        - velero_po_phase_retrieved.stdout is defined
+        - velero_po_phase_retrieved.stdout != '' 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  velero error output '
+      ansible.builtin.debug:
+        msg: "The following are the velero processing error from the last backup run \n\n {{ velero_po_errors_retrieved.stdout }}"
+        verbosity: 2
+      when:
+        - velero_po_errors_retrieved is defined
+        - velero_po_errors_retrieved.rc is defined
+        - velero_po_errors_retrieved.rc == 0
+        - velero_po_errors_retrieved.stdout is defined
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

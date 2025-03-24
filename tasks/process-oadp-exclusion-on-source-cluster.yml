@@ -1,0 +1,391 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Apply OADP exclusion label to failing items '
+  when:
+    - apply_oadp_exclusion_label is defined 
+    - apply_oadp_exclusion_label | bool 
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve unbound pvc'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pvc -A --no-headers | egrep -i "pending|terminating" | awk '{print $2 " -n " $1}'
+      ignore_errors: 'true'
+      register: unbound_pvcs
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label unbound pvcs'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} label --overwrite pvc {{ item }} {{ oadp_exclusion_add_label }}
+      loop: "{{ unbound_pvcs.stdout_lines }}"
+      when:
+        - unbound_pvcs.rc is defined
+        - unbound_pvcs.rc == 0 
+        - unbound_pvcs.stdout_lines is defined
+        - unbound_pvcs.stdout_lines | length > 0 
+        - item is defined
+        - item != '' 
+        - "item.split(' -n ')[1] in namespace_list" 
+      register: unbound_pvcs_labeled
+
+    - name: '{{ ansible_name_module }} | set_fact | unbound_pvc_list '
+      ansible.builtin.set_fact:
+        unbound_pvc_list: "{{ unbound_pvcs.stdout_lines }}"
+      when:
+        - unbound_pvcs_labeled is defined
+        - unbound_pvcs_labeled.results is defined
+        - unbound_pvcs_labeled.results | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:cat | print file containing unbound pvcs for unlabeling'
+      ansible.builtin.copy:
+        content: " {{ unbound_pvc_list | join('\n')}}"
+        dest:  "{{ staging_dir | default('/tmp', true)}}/unbound-pvcs-{{ ansible_date_time.iso8601 | replace(':', '-') }}.txt"
+        force: "true"
+      when:
+        - unbound_pvc_list is defined
+        - unbound_pvc_list | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve failing Imagestreams'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get is -A -o json | jq -r '.items[] | select("reason") | {"name": .metadata.name, "namespace": .metadata.namespace, "conditions": .status.tags[]?.conditions[]?}' | jq -s 
+      ignore_errors: 'true'
+      register: failing_is
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label failing Imagestreams'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} label --overwrite imagestream {{ item.name }}  -n {{ item.namespace }} {{ oadp_exclusion_add_label }}
+      loop: "{{ unbound_pvcs.stdout_lines }}"
+      when:
+        - failing_is.rc is defined
+        - failing_is.rc == 0 
+        - failing_is.stdout_lines is defined
+        - failing_is.stdout_lines | length > 0 
+        - item is defined
+        - item.name is defined
+        - item.name != '' 
+        - item.namespace is defined
+        - item.namespace != '' 
+        - "item.namespace in namespace_list" 
+      register: failing_is_labeled
+
+    - name: '{{ ansible_name_module }} | set_fact | Failing IS list '
+      ansible.builtin.set_fact:
+        failing_is_list: "{{ failing_is.stdout }}"
+
+    - name: '{{ ansible_name_module }} | set_fact | Failing IS list '
+      ansible.builtin.set_fact:
+        failing_is_to_label_list: "{{ failing_is_to_label_list | default([], true) + [item.name + ' -n ' + item.namespace] }}"
+      loop: "{{ failing_is_list }}"
+
+    - name: '{{ ansible_name_module }} | shell:cat | print file containing failing IS list for unlabeling'
+      ansible.builtin.copy:
+        content: "{{ failing_is_to_label_list | join('\n') }}"
+        dest:  "{{ staging_dir | default('/tmp', true)}}/failing-imagestreams-{{ ansible_date_time.iso8601 | replace(':', '-') }}.txt"
+        force: "true"
+      when:
+        - failing_is_to_label_list is defined
+        - failing_is_to_label_list | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve build pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces -l openshift.io/build.name --no-headers | awk '{print $2 " -n " $1}' 
+      ignore_errors: 'true'
+      register: build_pods
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label build pods'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_add_label }}
+      loop: "{{ build_pods.stdout_lines }}"
+      when:
+        - build_pods.rc is defined
+        - build_pods.rc == 0 
+        - build_pods.stdout_lines is defined
+        - build_pods.stdout_lines | length > 0 
+        - item is defined
+        - item != '' 
+        - "item.split(' -n ')[1] in namespace_list" 
+      register: build_pods_labeled
+
+    - name: '{{ ansible_name_module }} | set_fact | build_pods_list '
+      ansible.builtin.set_fact:
+        build_pods_list: "{{ build_pods.stdout_lines }}"
+      when:
+        - build_pods_labeled is defined
+        - build_pods_labeled.results is defined
+        - build_pods_labeled.results | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:cat | print file containing build pods for unlabeling'
+      ansible.builtin.copy:
+        content: " {{ build_pods_list | join('\n')}}"
+        dest:  "{{ staging_dir | default('/tmp', true)}}/build-pods-{{ ansible_date_time.iso8601 | replace(':', '-') }}.txt"
+        force: "true"
+      when:
+        - build_pods_list is defined
+        - build_pods_list | length > 0
+
+    - name: '{{ ansible_name_module }} | Label non running pod if applicable '
+      when:
+        - label_non_running_pods is defined 
+        - label_non_running_pods | bool 
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve non running pods '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get po --all-namespaces --no-headers | egrep -v 'Running' | awk '{print $2 " -n " $1}' 
+          ignore_errors: 'true'
+          register: non_running_pods
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label build pods'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_add_label }}
+          loop: "{{ non_running_pods.stdout_lines }}"
+          when:
+            - non_running_pods.rc is defined
+            - non_running_pods.rc == 0 
+            - non_running_pods.stdout_lines is defined
+            - non_running_pods.stdout_lines | length > 0 
+            - item is defined
+            - item != '' 
+            - "item.split(' -n ')[1] in namespace_list" 
+          register: non_running_pods_labeled
+
+        - name: '{{ ansible_name_module }} | set_fact | build_pods_list '
+          ansible.builtin.set_fact:
+            non_running_pods_list: "{{ non_running_pods.stdout_lines }}"
+          when:
+            - non_running_pods_labeled is defined
+            - non_running_pods_labeled.results is defined
+            - non_running_pods_labeled.results | length > 0
+
+        - name: '{{ ansible_name_module }} | shell:cat | print file containing non running for unlabeling'
+          ansible.builtin.copy:
+            content: " {{ non_running_pods_list | join('\n')}}"
+            dest:  "{{ staging_dir | default('/tmp', true)}}/non-running-pods-{{ ansible_date_time.iso8601 | replace(':', '-') }}.txt"
+            force: "true"
+          when:
+            - non_running_pods_list is defined
+            - non_running_pods_list | length > 0
+
+- name: '{{ ansible_name_module }} | Remove OADP exclusion label to failing items '
+  when:
+    - remove_oadp_exclusion_label is defined 
+    - remove_oadp_exclusion_label | bool 
+  block:
+    - name: '{{ ansible_name_module }} | Process PVC exlucsion label removal'
+      block:
+        - name: '{{ ansible_name_module }} | assert | the pvc to label list is defined 1 f 2'
+          ansible.builtin.assert:
+            that:
+              - unbound_pvc_list is defined
+              - unbound_pvc_list | length > 0
+            msg: "The list of pvc to unlabel is required in the format of a list <name -n namespace> for each pvc to unlabel"
+          when:
+            - not unbound_pvc_list_file is defined or unbound_pvc_list_file == ""
+
+        - name: '{{ ansible_name_module }} | assert | the pvc to label list is defined 2 f 2'
+          ansible.builtin.assert:
+            that:
+              - unbound_pvc_list_file is defined
+              - unbound_pvc_list_file != ""
+            msg: "The list of pvc to unlabel is required in the format of a file with a line representing <name -n namespace> for each pvc to unlabel"
+          when:
+            - not unbound_pvc is defined or unbound_pvc_list | length == 0
+
+        - name: '{{ ansible_name_module }} | stat | Check if PVC List file exist'
+          ansible.builtin.stat:
+            path: "{{ unbound_pvc_list_file }}"
+            get_checksum: false
+          when:
+            - unbound_pvc_list_file is defined
+            - unbound_pvc_list_file != ""
+          register: unbound_pvc_list_file_exists
+
+        - name: '{{ ansible_name_module }} | set_fact | PVC to label list '
+          ansible.builtin.set_fact:
+            unbound_pvc_list: "{{ lookup('file', unbound_pvc_list_file).splitlines() }}"
+          when:
+            - not unbound_pvc_list is defined or unbound_pvc_list | length == 0
+            - unbound_pvc_list_file_exists is defined
+            - unbound_pvc_list_file_exists.stat is defined
+            - unbound_pvc_list_file_exists.stat.exists is defined
+            - unbound_pvc_list_file_exists.stat.exists | bool
+            - unbound_pvc_list_file_exists.stat.isreg is defined
+            - unbound_pvc_list_file_exists.stat.isreg | bool
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel unbound pvcs'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} label --overwrite pvc {{ item }} {{ oadp_exclusion_remove_label }}
+          loop: "{{ unbound_pvc_list }}"
+          when:
+            - unbound_pvc_list is defined
+            - unbound_pvc_list | length > 0 
+            - item is defined
+            - item != '' 
+          register: unbound_pvcs_unlabeled
+
+    - name: '{{ ansible_name_module }} | Process imagestream exlucsion label removal'
+      block:
+        - name: '{{ ansible_name_module }} | assert | the imagestream to label list is defined 1 f 2'
+          ansible.builtin.assert:
+            that:
+              - failing_is_to_label_list is defined
+              - failing_is_to_label_list | length > 0
+            msg: "The list of imagestream to unlabel is required in the format of a list <name -n namespace> for each imagestream to unlabel"
+          when:
+            - not failing_is_to_label_list_file is defined or failing_is_to_label_list_file == ""
+
+        - name: '{{ ansible_name_module }} | assert | the imagestream to label list is defined 2 f 2'
+          ansible.builtin.assert:
+            that:
+              - failing_is_to_label_list_file is defined
+              - failing_is_to_label_list_file != ""
+            msg: "The list of imagestream to unlabel is required in the format of a file with a line representing <name -n namespace> for each imagestream to unlabel"
+          when:
+            - not failing_is_to_label_list is defined or failing_is_to_label_list | length == 0
+
+        - name: '{{ ansible_name_module }} | stat | Check if imagestream List file exist'
+          ansible.builtin.stat:
+            path: "{{ failing_is_to_label_list_file }}"
+            get_checksum: false
+          when:
+            - failing_is_to_label_list_file is defined
+            - failing_is_to_label_list_file != ""
+          register: failing_is_to_label_list_file_exists
+
+        - name: '{{ ansible_name_module }} | set_fact | imagestream unlabel list '
+          ansible.builtin.set_fact:
+            unbound_pvc_list: "{{ lookup('file', failing_is_to_label_list_file).splitlines() }}"
+          when:
+            - not failing_is_to_label_list is defined or failing_is_to_label_list | length == 0
+            - failing_is_to_label_list_file_exists is defined
+            - failing_is_to_label_list_file_exists.stat is defined
+            - failing_is_to_label_list_file_exists.stat.exists is defined
+            - failing_is_to_label_list_file_exists.stat.exists | bool
+            - failing_is_to_label_list_file_exists.stat.isreg is defined
+            - failing_is_to_label_list_file_exists.stat.isreg | bool
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel imagestreams'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} label --overwrite imagestream {{ item }} {{ oadp_exclusion_remove_label }}
+          loop: "{{ unbound_pvc_list }}"
+          when:
+            - failing_is_to_label_list is defined
+            - failing_is_to_label_list | length > 0 
+            - item is defined
+            - item != '' 
+
+    - name: '{{ ansible_name_module }} | Process build pod exlucsion label removal'
+      block:
+        - name: '{{ ansible_name_module }} | assert | the build pod to label list is defined 1 f 2'
+          ansible.builtin.assert:
+            that:
+              - build_pods_to_label_list is defined
+              - build_pods_to_label_list | length > 0
+            msg: "The list of build pods to unlabel is required in the format of a list <name -n namespace> for each build pod to unlabel"
+          when:
+            - not build_pods_to_label_list_file is defined or build_pods_to_label_list_file == ""
+
+        - name: '{{ ansible_name_module }} | assert | the build pod to label list is defined 2 f 2'
+          ansible.builtin.assert:
+            that:
+              - build_pods_to_label_list_file is defined
+              - build_pods_to_label_list_file != ""
+            msg: "The list of build pods to unlabel is required in the format of a file with a line representing <name -n namespace> for each build pod to unlabel"
+          when:
+            - not build_pods_to_label_list is defined or build_pods_to_label_list | length == 0
+
+        - name: '{{ ansible_name_module }} | stat | Check if build pods List file exist'
+          ansible.builtin.stat:
+            path: "{{ build_pods_to_label_list_file }}"
+            get_checksum: false
+          when:
+            - build_pods_to_label_list_file is defined
+            - build_pods_to_label_list_file != ""
+          register: build_pods_to_label_list_file_exists
+
+        - name: '{{ ansible_name_module }} | set_fact | build pods unlabel list '
+          ansible.builtin.set_fact:
+            build_pods_list: "{{ lookup('file', build_pods_to_label_list_file).splitlines() }}"
+          when:
+            - not build_pods_to_label_list is defined or build_pods_to_label_list | length == 0
+            - build_pods_to_label_list_file_exists is defined
+            - build_pods_to_label_list_file_exists.stat is defined
+            - build_pods_to_label_list_file_exists.stat.exists is defined
+            - build_pods_to_label_list_file_exists.stat.exists | bool
+            - build_pods_to_label_list_file_exists.stat.isreg is defined
+            - build_pods_to_label_list_file_exists.stat.isreg | bool
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel build pods'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_remove_label }}
+          loop: "{{ build_pods_list }}"
+          when:
+            - build_pods_to_label_list is defined
+            - build_pods_to_label_list | length > 0 
+            - item is defined
+            - item != '' 
+
+    - name: '{{ ansible_name_module }} | Label non running pod if applicable '
+      when:
+        - unlabel_non_running_pods is defined 
+        - unlabel_non_running_pods | bool 
+      block:
+        - name: '{{ ansible_name_module }} | assert | the non running pod to label list is defined 1 f 2'
+          ansible.builtin.assert:
+            that:
+              - non_running_pods_to_label_list is defined
+              - non_running_pods_to_label_list | length > 0
+            msg: "The list of  non running pods to unlabel is required in the format of a list <name -n namespace> for each  non running pod to unlabel"
+          when:
+            - not non_running_pods_to_label_list_file is defined or non_running_pods_to_label_list_file == ""
+
+        - name: '{{ ansible_name_module }} | assert | the  non running pod to label list is defined 2 f 2'
+          ansible.builtin.assert:
+            that:
+              - non_running_pods_to_label_list_file is defined
+              - non_running_pods_to_label_list_file != ""
+            msg: "The list of  non running pods to unlabel is required in the format of a file with a line representing <name -n namespace> for each  non running pod to unlabel"
+          when:
+            - not non_running_pods_to_label_list is defined or non_running_pods_to_label_list | length == 0
+
+        - name: '{{ ansible_name_module }} | stat | Check if  non running pods List file exist'
+          ansible.builtin.stat:
+            path: "{{ non_running_pods_to_label_list_file }}"
+            get_checksum: false
+          when:
+            - non_running_pods_to_label_list_file is defined
+            - non_running_pods_to_label_list_file != ""
+          register: non_running_pods_to_label_list_file_exists
+
+        - name: '{{ ansible_name_module }} | set_fact |  non running pods unlabel list '
+          ansible.builtin.set_fact:
+            non_running_pods_list: "{{ lookup('file', non_running_pods_to_label_list_file).splitlines() }}"
+          when:
+            - not non_running_pods_to_label_list is defined or non_running_pods_to_label_list | length == 0
+            - non_running_pods_to_label_list_file_exists is defined
+            - non_running_pods_to_label_list_file_exists.stat is defined
+            - non_running_pods_to_label_list_file_exists.stat.exists is defined
+            - non_running_pods_to_label_list_file_exists.stat.exists | bool
+            - non_running_pods_to_label_list_file_exists.stat.isreg is defined
+            - non_running_pods_to_label_list_file_exists.stat.isreg | bool
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel  non running pods'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_remove_label }}
+          loop: "{{ non_running_pods_list }}"
+          when:
+            - non_running_pods_to_label_list is defined
+            - non_running_pods_to_label_list | length > 0 
+            - item is defined
+            - item != '' 
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

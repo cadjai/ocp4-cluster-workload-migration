@@ -1,0 +1,159 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get MTC cat src cr'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get catalogsource -A --no-headers | grep -i mtc | awk '{print $2}'
+  ignore_errors: true
+  register: mtc_catsrc_exists
+
+- ansible.builtin.assert:
+    that:
+      - mtc_catsrc_exists is defined
+      - mtc_catsrc_exists.rc is defined
+      - mtc_catsrc_exists.rc == 0
+      - mtc_catsrc_exists.stdout is defined
+      - mtc_catsrc_exists.stdout != ''
+      - "'mtc' in mtc_catsrc_exists.stdout"
+    msg: " the MTC Operator Catalog Source must exist in the cluster"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get MTC namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get project {{ mtc_ns }} --no-headers | awk '{print $1}'
+  ignore_errors: true
+  register: mtc_ns_exists
+
+- name: '{{ ansible_name_module }} | Clean mtc Operator manifests from previous runs'
+  when:
+    - mtc_ns_exists is defined
+    - mtc_ns_exists.stdout is defined
+    - mtc_ns_exists.stdout != ''
+    - "mtc_ns in mtc_ns_exists.stdout"
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get MTC subscription cr'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sub -A --no-headers | grep mtc | awk '{print $2}'
+      ignore_errors: true
+      register: mtc_sub_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get MTC OG cr namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get og -A --no-headers | grep mtc | awk '{print $2}'
+      ignore_errors: true
+      register: mtc_og_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete MTC OG if no sub exist in namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} delete og {{ mtc_og_exists.stdout }} -n {{ mtc_ns }}
+      ignore_errors: true
+      when:
+        - mtc_sub_exists.stdout is defined
+        - mtc_sub_exists.stdout == ''
+        - mtc_og_exists.rc is defined
+        - mtc_og_exists.rc == 0
+        - mtc_og_exists.stdout is defined
+        - mtc_og_exists.stdout != ''
+      register: mtc_og_deleted
+
+- name: '{{ ansible_name_module }} | Create MTC Operator NS if it does not exist'
+  when:
+    - mtc_ns_exists.rc >= 0
+    - mtc_ns_exists.stderr is defined
+    - mtc_ns_exists.stderr != ''
+    - "'not found' in mtc_ns_exists.stderr"
+  block:
+    - name: '{{ ansible_name_module }} | Deploy Operators | Create Operator Namespace'
+      ansible.builtin.command: >
+        {{ openshift_cli }} create namespace '{{ mtc_ns }}'
+      failed_when: "operator_ns_created.rc >=1 and not ' already exists' in operator_ns_created.stderr"
+      register: operator_ns_created
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ mtc_ns }} --type merge -p '{"metadata":{"labels": {{ mtc_operator.patch_namespace_labels }} }}'
+      when:
+        - mtc_operator.patch_namespace_labels is defined
+        - mtc_operator.patch_namespace_labels != ''
+      register: operator_ns_patched
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add annotations'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ mtc_ns }} --type merge -p '{"metadata":{"annotations": {{ mtc_operator.patch_namespace_annotations }} }}'
+      when:
+        - mtc_operator.patch_namespace_annotations is defined
+        - mtc_operator.patch_namespace_annotations != ''
+      register: operator_ns_ann_patched
+
+- name: '{{ ansible_name_module }} | Install mtc Operator'
+  when:
+    - mtc_sub_exists.stdout is defined 
+    - mtc_sub_exists.stdout == '' 
+    - mtc_og_exists.stdout is defined 
+    - mtc_og_exists.stdout == ''
+  block:
+    - name: '{{ ansible_name_module }} | template | Copy OperatorGroup Config to staging location'
+      ansible.builtin.template:
+        src: "../cluster_post-install_day_two/templates/OperatorGroup.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-OperatorGroup.yml"
+        force: yes
+      vars:
+        operator_group_name: "{{ mtc_operator.group_name }}"
+        operator_deploy_namespace: "{{ mtc_operator.deploy_namespace }}"
+        operator_target_namespace: "{{ mtc_operator.target_namespace }}"
+        operator_name: "{{ mtc_operator.name }}"
+      register: op_csc_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operatorgroup '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-OperatorGroup.yml
+      register: op_csc_deployed
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | Get package manifest for each operator'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get packagemanifest {{ mtc_operator.name }} -ojsonpath='{.status.channels[-1].currentCSV}{"\n"}{.status.defaultChannel}{"\n"}'
+      register: operator_pkg_info
+
+    - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
+      ansible.builtin.template:
+        src: "../cluster_post-install_day_two/templates/Subscription.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-Subscription.yml"
+        force: yes
+      vars:
+        operator_catalog_name: "{{ mtc_operator.catalog_name }}"
+        operator_target_namespace: "{{ mtc_operator.target_namespace }}"
+        operator_deploy_namespace: "{{ mtc_operator.deploy_namespace }}"
+        operator_name: "{{ mtc_operator.name }}"
+        operator_sub_channel: "{{ operator_pkg_info.stdout_lines[1] }}"
+        operator_csv_version: "{{ operator_pkg_info.stdout_lines[0] }}"
+      register: op_sub_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-Subscription.yml
+      register: op_sub_deployed
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for Operator resources to be created'
+      ansible.builtin.wait_for:
+        timeout: 120
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | Apply CR if appropriate'
+      when:
+        - mtc_operator.create_customresource is defined 
+        - mtc_operator.create_customresource | bool
+        - mtc_operator.customresource_template is defined
+        - mtc_operator.customresource_template != '' 
+      block:
+        - name: '{{ ansible_name_module }} | template | Copy Operator CR to staging location'
+          ansible.builtin.template:
+            src: "{{ mtc_operator.customresource_template }}"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-mtc-migration-controller-customresource.yml"
+            force: yes
+          vars:
+            operator_catalog_name: "{{ mtc_operator.catalog_name }}"
+            operator_target_namespace: "{{ mtc_operator.target_namespace }}"
+          register: op_cr_rendered
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator CR'
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ mtc_operator.name }}-mtc-migration-controller-customresource.yml
+          register: op_cr_deployed
+

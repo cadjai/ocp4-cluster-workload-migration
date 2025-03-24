@@ -1,0 +1,53 @@
+- name: ' Konductor | Provision UPI Infra | mtc-targeted-namespace-list-retrieval.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/mtc-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Retieve Namespace Info"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_console_url is defined
+              - src_mtc_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_token is defined
+              - src_mtc_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            src_mtc_cluster_console_port: '6443'
+          when:
+            - not src_mtc_cluster_console_port is defined or src_mtc_cluster_console_port == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Info retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-satoken-from-mtc-source-cluster.yml
+      when:
+        - retrieve_satoken is defined
+        - retrieve_satoken | bool
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace List retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-mtc-source-cluster.yml
+      when:
+        - retrieve_nslist is defined
+        - retrieve_nslist | bool
+
+
+

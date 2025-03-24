@@ -1,0 +1,44 @@
+- name: ' Konductor | Provision UPI Infra | mtc-targeted-namespace-list-removal.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/mtc-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Remove Old Namespace from target cluster"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_console_url is defined
+              - src_mtc_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_token is defined
+              - src_mtc_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            src_mtc_cluster_console_port: '6443'
+          when:
+            - not src_mtc_cluster_console_port is defined or src_mtc_cluster_console_port == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Info retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/remove-old-projects-from-destination-cluster.yml
+
+
+

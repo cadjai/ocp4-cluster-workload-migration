@@ -1,0 +1,26 @@
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  name: restore-{{ backup_name }}
+  namespace: {{ oadp_restore_ns }} 
+spec:
+{% if oadp_schedule_name is defined and oadp_schedule_name != '' %}
+  scheduleName: {{ oadp_schedule_name }}
+{% endif %}
+  excludedNamespaces: []
+  preserveNodePorts: true
+  existingResourcePolicy: none
+  itemOperationTimeout: 4h0m0s
+  backupName: {{ backup_name }} 
+  includedNamespaces: []
+  excludedResources:
+    - nodes
+    - events
+    - events.events.k8s.io
+    - backups.velero.io
+    - restores.velero.io
+    - resticrepositories.velero.io
+    - csinodes.storage.k8s.io
+    - volumeattachments.storage.k8s.io
+    - backuprepositories.velero.io
+  restorePVs: true

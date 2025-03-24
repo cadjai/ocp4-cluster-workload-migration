@@ -1,0 +1,60 @@
+- name: ' Konductor | Provision UPI Infra | process-oadp-exclusion-on-source-cluster-pre-backup.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Process OADP exclusion for failing items pre Backup of Source Cluster "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_console_url is defined
+              - backup_src_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_token is defined
+              - backup_src_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            backup_src_cluster_console_port: '6443'
+          when:
+            - not backup_src_cluster_console_port is defined or backup_src_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | assert | the OADP exclusion toggle variable is defined 1 of 2'
+          ansible.builtin.assert:
+            that:
+              - apply_oadp_exclusion_label is defined 
+              - apply_oadp_exclusion_label | bool
+            msg: "The apply_oadp_exclusion_label or remove_oadp_exclusion_label bool is required to run this playbook" 
+          when:
+            - not remove_oadp_exclusion_label is defined or not remove_oadp_exclusion_label | bool
+
+        - name: '{{ ansible_name_module }} | assert | the OADP exclusion toggle variable is defined 2 of 2'
+          ansible.builtin.assert:
+            that:
+              - remove_oadp_exclusion_label is defined 
+              - remove_oadp_exclusion_label | bool
+            msg: "The apply_oadp_exclusion_label or remove_oadp_exclusion_label bool is required to run this playbook" 
+          when:
+            - not apply_oadp_exclusion_label is defined or not apply_oadp_exclusion_label | bool
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster OADP exclusion tasks'
+      ansible.builtin.import_tasks: tasks/process-oadp-exclusion-on-source-cluster.yml
+

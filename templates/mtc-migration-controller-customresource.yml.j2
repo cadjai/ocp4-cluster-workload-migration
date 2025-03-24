@@ -1,0 +1,31 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigrationController
+metadata:
+  name: migration-controller
+  namespace: openshift-migration
+spec:
+  mig_namespace_limit: '{{ mig_cntl_ns_limit | default("10", true) }}'
+  migration_ui: true
+  mig_pod_limit: '{{ mig_cntl_pod_limit | default("100", true) }}'
+  migration_controller: true
+  migration_log_reader: true
+  olm_managed: true
+  cluster_name: {{ mig_cntl_host | default("host", true) }}
+  migration_velero: true
+  mig_pv_limit: '{{ mig_cntl_pv_limit | default("100", true) }}'
+  version: 1.8.4
+  restic_timeout: '{{ mig_cntl_restic_timeout | default("1h", true) }}'
+  azure_resource_group: ''
+  migration_rsync_privileged: '{{ mig_cntl_run_rsync_privileged | default("true", true) }}'
+  rsync_endpoint_type: '{{ mig_cntl_rsync_endpoint_type | default("Route", true) }}'
+  mig_controller_limits_cpu: "{{ mig_cntl_cpu_limit | default('1', true) }}" 
+  mig_controller_limits_memory: "{{ mig_cntl_mem_limit | default('10Gi', true) }}" 
+  mig_controller_requests_cpu: "{{ mig_cntl_cpu_request | default('100m', true) }}" 
+  mig_controller_requests_memory: "{{ mig_cntl_mem_request | default('350Mi', true) }}" 
+  disable_image_migration: "{{ mig_cntl_disable_image_migration | default('false', true) }}"
+  disable_pv_migration: "{{ mig_cntl_disable_pv_migration | default('false', true) }}"
+  rsync_backoff_limit: '{{ mig_cntl_rsync_backoff_limit | default("20", true) }}'
+{% if additional_excluded_resources is defined and additional_excluded_resources | d([]) | length > 0 %}
+  additional_excluded_resources: 
+    {{ mig_cntl_addl_excluded_resources | to_nice_yaml | indent(4, false) }}
+{% endif %}

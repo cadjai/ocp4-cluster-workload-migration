@@ -1,0 +1,21 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigStorage
+metadata:
+  name: {{ mig_cntl_storagerepo_name }}
+  namespace: openshift-migration
+spec:
+  backupStorageConfig:
+    awsBucketName: {{ mig_cntl_storagerepo_bucket_name }}
+    awsRegion: {{ mig_cntl_storagerepo_s3bucket_name | default("us-east", true) }}
+    awsS3Url: {{ mig_cntl_storagerepo_s3endpoint_url }}
+    credsSecretRef:
+      name: {{ mig_cntl_storagerepo_secret_name }}
+      namespace: {{ mig_cntl_storagerepo_secret_ns | default("openshift-config", true) }}
+    insecure: {{ mig_cntl_storagerepo_s3endpoint_insecure | default("true", true) }}
+  backupStorageProvider: aws
+  volumeSnapshotConfig:
+    awsRegion: {{ mig_cntl_storagerepo_s3bucket_region | default("us-east-1", true) }}
+    credsSecretRef:
+      name: {{ mig_cntl_storagerepo_secret_name }}
+      namespace: {{ mig_cntl_storagerepo_secret_ns | default("openshift-config", true) }}
+  volumeSnapshotProvider: {{ mig_cntl_storagerepo_provider | default("aws", true) }}

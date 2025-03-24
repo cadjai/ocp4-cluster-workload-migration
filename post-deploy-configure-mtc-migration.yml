@@ -1,0 +1,64 @@
+- name: ' Konductor | Provision UPI Infra | post-deploy-configure-mtc-operator.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/mtc-migration.yml'
+
+  vars:
+    module: "Configure MTC for migration"
+    ansible_name_module: " Konductor | Provision UPI Infra | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      when:
+        - retrieve_satoken is defined
+        - retrieve_satoken | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_console_url is defined
+              - src_mtc_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_token is defined
+              - src_mtc_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            src_mtc_cluster_console_port: '6443' 
+          when:
+            - not src_mtc_cluster_console_port is defined or src_mtc_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Info retrievl additional tasks'
+          ansible.builtin.import_tasks: tasks/retrieve-info-from-mtc-source-cluster.yml
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional MTC operator install check tasks'
+      ansible.builtin.import_tasks: tasks/ensure-mtc-operator-is-installed.yml
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional MTC operator config tasks'
+      ansible.builtin.import_tasks: tasks/configure-mtc.yml
+

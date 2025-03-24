@@ -1,0 +1,13 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigMigration
+metadata:
+  name: {{ mig_migration_name | default(mig_cntl_migration_name, true) }}
+  namespace: openshift-migration
+spec:
+  migPlanRef:
+    name: {{ mig_cntl_migplan_name }} 
+    namespace: openshift-migration
+  quiescePods:  {{ mig_cntl_migration_quiesce_pods | default('true', true) }}
+  stage: {{ mig_cntl_migration_apply_stage | default('false', true) }}
+  migrateState: {{ mig_cntl_migration_migrate_state | default('false', true) }}
+  rollback: false

@@ -1,0 +1,76 @@
+---
+mtc_ns: 'openshift-migration'
+mtc_operator:      ### name of the operator as it was used to mirror the operator
+  name: 'mtc-operator'
+  group_name: 'mtc-operator-group'
+  catalog_name: 'custom-mtc-operator'  ### metadata.name from rh-catalog-source-artifactory.yaml file
+  sub_channel: 'release-v1.8'
+  deploy_namespace: 'openshift-migration'
+  target_namespace: 'openshift-migration' ### values are all, empty or list of ns names
+  deploy_namespace_description: 'openshift-migration'
+  patch_namespace: 'true'
+  patch_namespace_labels: '{"openshift.io/cluster-monitoring": "true"}'
+  patch_namespace_annotations: '{"openshift.io/node-selector": ""}'
+  deploy: 'true'
+  create_namespace: 'true'
+  create_catalog: 'false'
+  create_catalog_group: 'true'
+  index_image: 'mtc-operator-index'   ### metadata.name from the olm-icsp-artifactory.yaml file
+  create_customresource: 'true'
+  customresource_template: '{{ playbook_dir }}/templates/mtc-migration-controller-customresource.yml.j2'
+mig_cntl_ns_limit: '1000'
+mig_cntl_pod_limit: '1000'
+mig_cntl_host: 'local-cluster'
+mig_cntl_desthost: '{{ mig_cntl_host }}'
+mig_cntl_pv_limit: '1000'
+mig_cntl_run_rsync_privileged: 'true'
+configure_storage_repo: 'true'
+mig_cntl_storagerepo_name: ''
+mig_cntl_storagerepo_bucket_name: ''
+mig_cntl_storagerepo_s3endpoint_url: ''
+mig_cntl_storagerepo_bucket_access_key: ''
+mig_cntl_storagerepo_bucket_access_secret: ''
+add_mig_cluster: 'true'
+mig_cntl_cluster_name: ''
+mig_cntl_cluster_api_url: ''   ## api URL without port
+mig_cntl_cluster_sa_token: ''
+mig_cntl_cluster_internal_registry_url: ''  ## registry http route
+mig_sa_token_duration: '8760h'
+mig_cntl_cluster_internal_registry_insecure: 'true'
+mig_cntl_cluster_token_sa_secret_name: ''
+mig_cntl_cluster_token_sa_secret_ns: ''
+mig_cntl_migplan_name: ''
+mig_cntl_migration_name: ''
+mig_cntl_miganalytic_analyze_image_count: 'false'
+mig_cntl_miganalytic_analyze_k8resources: 'false'
+mig_cntl_miganalytic_analyze_pv_capacity: 'false'
+mig_cntl_miganalytic_refresh: 'false'
+mig_cntl_migration_apply_stage: 'true'
+mig_cntl_migration_migrate_state: 'false'
+mig_cntl_migration_quiesce_pods: 'false'
+retrieve_satoken: 'false'
+namespace_list: []
+add_replication_repo: 'true'
+add_migration_plan: 'true'
+apply_ns_exlusion: 'true'
+excluded_ns:
+  - "ansible-automation-platform"
+  - "default"
+  - "hive"
+  - "kube-*"
+  - "local-quay"
+  - "multicluster-engine"
+  - "nvidia-gpu-*"
+  - "open-cluster-management-*"
+  - "openshift-*"
+  - "redhat-marketplace"
+mig_cntl_restic_timeout: '4h'
+mig_cntl_live_migration: 'false'
+mig_cntl_indirect_volume_migration: 'false'
+mig_cntl_indirect_image_migration: 'false'
+mig_cntl_rsync_backoff_limit: '40'
+apply_oadp_exclusion_label: 'true'
+oadp_exclusion_add_label: 'velero.io/exclude-from-backup=true'
+oadp_exclusion_remove_label: 'velero.io/exclude-from-backup-'
+namespace_list_targeted: '{{ namespace_list }}'
+perform_migration: 'false'

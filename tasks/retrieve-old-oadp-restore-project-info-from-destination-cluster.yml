@@ -1,0 +1,241 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print old Restore Backup Info'
+  block:
+    - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+      ansible.builtin.assert:
+        that:
+          -  namespace_list_targeted is defined
+          -  namespace_list_targeted | length > 0
+        msg: "The target namesapce list is required for this cleanup "
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | content of all targeted namespaces'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get all,pvc,secret,cm,networkpolicy,argocds.argoproj.io --no-headers  -n {{ item }} | awk '{print $1}' 
+      ignore_errors: yes
+      loop: "{{ namespace_list_targeted | list }}"
+      register: ns_content
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace content output 1 of 2'
+      ansible.builtin.debug:
+        var: ns_content 
+        verbosity: 2
+      when:
+        - ns_content is defined
+        - ns_content.results is defined 
+        - ns_content.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace content output 2 of 2'
+      ansible.builtin.debug:
+        var: item.stdout_lines | join(' ') 
+        verbosity: 2
+      loop: "{{ ns_content.results }}"
+      when:
+        - ns_content is defined
+        - ns_content.results is defined 
+        - ns_content.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | content of all targeted namespaces'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} delete {{ item.stdout_lines | join(' ') }} --cascade --timeout=0s --recursive --force=true --grace-period=0  -n {{ item.item }}  
+      ignore_errors: yes
+      loop: "{{ ns_content.results }}"
+      when:
+        - item is defined
+        - item.rc is defined
+        - item.rc == 0 
+        - item.item is defined
+        - item.item != '' 
+        - item.stdout is defined
+        - item.stdout != '' 
+      register: ns_content_deleted
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace content deletion output 1 of 2'
+      ansible.builtin.debug:
+        var: ns_content_deleted 
+        verbosity: 2
+      when:
+        - ns_content_deleted is defined
+        - ns_content_deleted.results is defined 
+        - ns_content_deleted.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace content deletion output 2 of 2'
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      when:
+        - ns_content_deleted is defined
+        - ns_content_deleted.results is defined 
+        - ns_content_deleted.results | length > 0 
+      loop: "{{ ns_content_deleted.results }}"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | post deletion content of all targeted namespaces'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get all,pvc,secret,cm --no-headers  -n {{ item }} | awk '{print $1}' 
+      ignore_errors: yes
+      loop: "{{ namespace_list_targeted | list }}"
+      register: ns_content_pd
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace post deletion content output 1 of 2'
+      ansible.builtin.debug:
+        var: ns_content_pd.results 
+        verbosity: 2
+      when:
+        - ns_content_pd is defined
+        - ns_content_pd.results is defined 
+        - ns_content_pd.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace post deletion content output 2 of 2'
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      loop: "{{ ns_content_pd.results }}"
+      when:
+        - ns_content_pd is defined
+        - ns_content_pd.results is defined 
+        - ns_content_pd.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | Retrieve ManagedFields info if necessary '
+      when:
+        - remove_managedfields is defined
+        - remove_managedfields | bool 
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | ManagedFields info of all targeted namespaces'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project  {{ item }} -ojsonpath='{.metadata.ManagedFields}' 
+          ignore_errors: yes
+          loop: "{{ namespace_list_targeted | list }}"
+          register: ns_managedfields
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace ManagedFields output'
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ ns_managedfields.results }}"
+          when:
+            - ns_managedfields is defined
+            - ns_managedfields.results is defined
+            - ns_managedfields.results | length > 0 
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} patch | remove ManagedFields from  all targeted namespaces'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch project  {{ item.item }} --type json -p='[{"op": "remove", "path": "/metadata/managedFields"}]' 
+          loop: "{{ ns_managedfields.results }}"
+          when:
+            - ns_managedfields is defined
+            - ns_managedfields.results is defined
+            - ns_managedfields.results | length > 0 
+            - item.item is defined
+            - item.item != '' 
+            - item.stdout_lines is defined
+            - item.stdout_lines | length > 0 
+          register: ns_managedfields_patched
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace ManagedFields removal output'
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ ns_managedfields_patched.results }}"
+          when:
+            - ns_managedfields_patched is defined
+            - ns_managedfields_patched.results is defined
+            - ns_managedfields_patched.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | Retrieve Finalizers info if necessary '
+      when:
+        - remove_finalizers is defined
+        - remove_finalizers | bool 
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | finalizers info of all targeted namespaces'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project  {{ item }} -ojsonpath='{.spec.finalizers}' 
+          ignore_errors: yes
+          loop: "{{ namespace_list_targeted | list }}"
+          register: ns_finalizers
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace finalizers output'
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ ns_finalizers.results }}"
+          when:
+            - ns_finalizers is defined
+            - ns_finalizers.results is defined
+            - ns_finalizers.results | length > 0 
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} patch | remove finalizers from  all targeted namespaces'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get namespace {{ item.item }} -o json | jq '.spec.finalizers = []' | oc  replace --raw "/api/v1/namespaces/{{ item.item }}/finalize" -f - 
+          loop: "{{ ns_finalizers.results }}"
+          when:
+            - ns_finalizers is defined
+            - ns_finalizers.results is defined
+            - ns_finalizers.results | length > 0 
+            - item.item is defined
+            - item.item != '' 
+            - item.stdout_lines is defined
+            - item.stdout_lines | length > 0 
+          register: ns_finalizers_patched
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace finalizers removal output'
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ ns_finalizers_patched.results }}"
+          when:
+            - ns_finalizers_patched is defined
+            - ns_finalizers_patched.results is defined
+            - ns_finalizers_patched.results | length > 0 
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve info all targeted namespaces'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project {{ item.item }} -o jsonpath='{.spec}' 
+          ignore_errors: yes
+          loop: "{{ ns_finalizers.results }}"
+          when:
+            - ns_finalizers_patched is defined
+            - ns_finalizers_patched.results is defined
+            - ns_finalizers_patched.results | length > 0 
+          register: ns_no_finalizers
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace post finalizers removal output'
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ ns_no_finalizers.results }}"
+          when:
+            - ns_no_finalizers is defined
+            - ns_no_finalizers.results is defined
+            - ns_no_finalizers.results | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} delete |  delete all targeted namespaces'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} delete project {{ item }} 
+      ignore_errors: yes
+      loop: "{{ namespace_list_targeted | list }}"
+      register: ns_deleted
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print target namespace removal output'
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      loop: "{{ ns_deleted.results }}"
+      when:
+        - ns_deleted is defined
+        - ns_deleted.results is defined
+        - ns_deleted.results | length > 0 
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

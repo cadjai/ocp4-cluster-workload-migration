@@ -1,0 +1,138 @@
+- name: ' Konductor | Provision UPI Infra | undeploy-oadp-migration-application.yml'
+  hosts: localhost
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Uninstall OADP instance"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate backup deployment removal variables'
+      when:
+        - remove_oadp_backup_deployment is defined
+        - remove_oadp_backup_deployment | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | the restore namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - oadp_restore_ns is defined and oadp_restore_ns != ""
+            msg: " the oadp_restore_ns required to remove the oadp deployment"
+
+        - name: '{{ ansible_name_module }} | assert | the backup_name is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_name is defined and backup_name != ""
+            msg: " the backup_name must be set and valid "
+
+    - name: '{{ ansible_name_module }} | validate restore deployment removal variables'
+      when:
+        - remove_oadp_restore_deployment is defined
+        - remove_oadp_restore_deployment | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | the restore namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - oadp_restore_ns is defined and oadp_restore_ns != ""
+            msg: " the oadp_restore_ns required to remove the oadp deployment"
+
+        - name: '{{ ansible_name_module }} | assert | the restore name is defined'
+          ansible.builtin.assert:
+            that:
+              - restore_name is defined and restore_name != ""
+            msg: "restore_name the  required to remove the oadp deployment"
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | remove oadp backup deployment'
+      when:
+        - remove_oadp_backup_deployment is defined
+        - remove_oadp_backup_deployment | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-backup schedue CR '
+          command: >
+            {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-schedule-cr.yaml -n {{ oadp_backup_ns }}
+          when:
+            - remove_oadp_backup_schedule is defined
+            - remove_oadp_backup_schedule | bool 
+          register: oadp_backup_schedule_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-backup CR '
+          command: >
+            {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-backup-cr.yaml -n {{ oadp_backup_ns }}
+          register: oadp_bacup_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-dataprotectionapplication CR '
+          command: >
+            {{ openshift_cli }} delete -f  {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-dataprotectionapplication-cr.yaml -n {{ oadp_backup_ns }} 
+          register: oadp_dataprotection_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete secret | cloud-credentials secret '
+          command: >
+            {{ openshift_cli }} delete secret cloud-credentials -n {{ oadp_backup_ns }} 
+          register: valero_creds_secret_deleted
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP namespace'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete project {{ oadp_backup_ns }}
+          ignore_errors: true
+          when:
+            - remove_oadp_backup_ns is defined
+            - remove_oadp_backup_ns | bool 
+          register: oadp_backup_ns_deleted
+
+    - name: '{{ ansible_name_module }} | remove oadp restore deployment'
+      when:
+        - remove_oadp_restore_deployment is defined
+        - remove_oadp_restore_deployment | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-restore schedule CR '
+          command: >
+            {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-schedule-cr.yaml -n {{ oadp_restore_ns }}
+          when:
+            - remove_oadp_restore_schedule is defined
+            - remove_oadp_restore_schedule | bool 
+          register: oadp_restore_schedule_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-restore CR '
+          command: >
+            {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-cr.yaml -n {{ oadp_restore_ns }}
+          register: oadp_restore_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete | oadp-dataprotectionapplication CR '
+          command: >
+            {{ openshift_cli }} delete -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-dataprotectionapplication-cr.yaml -n {{ oadp_restore_ns }} 
+          register: oadp_dataprotection_cr_deleted
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} delete secret | cloud-credentials secret '
+          command: >
+            {{ openshift_cli }} delete secret cloud-credentials -n {{ oadp_restore_ns }} 
+          register: valero_creds_secret_deleted
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP namespace'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} delete project {{ oadp_restore_ns }}
+          ignore_errors: true
+          when:
+            - remove_oadp_restore_ns is defined
+            - remove_oadp_restore_ns | bool 
+          register: oadp_restore_ns_deleted

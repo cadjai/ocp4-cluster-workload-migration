@@ -1,0 +1,32 @@
+---
+- name: "{{ ansible_name_module }} | Set P Check Reg Var Fact"
+  ansible.builtin.set_fact:
+    reg_vars_list: "{{ reg_vars_list | default({}) | combine({item: {'status': item_value is succeeded and item_value is not skipped , 'output': '' } }) }}"
+  loop: "{{ hostvars['localhost'].keys() }}"
+  when: "'pcheck_' in item"
+  vars:
+    item_value: "{{ hostvars['localhost'][item] }}"
+
+- name: "{{ ansible_name_module }} | Normalize Task Types - Console"
+  ansible.builtin.set_fact:
+    reg_vars_list: "{{ reg_vars_list | default({}) | combine({item.key: {'output': item_value.stdout} }, recursive=True) }}"
+  loop: "{{ reg_vars_list | dict2items }}"
+  when: "item_value.stdout is defined"
+  vars:
+    item_value: "{{ hostvars['localhost'][item.key] }}"
+
+- name: "{{ ansible_name_module }} | Normalize Task Types - Assert"
+  ansible.builtin.set_fact:
+    reg_vars_list: "{{ reg_vars_list | default({}) | combine({item.key: {'output': item_value.msg} }, recursive=True) }}"
+  loop: "{{ reg_vars_list | dict2items }}"
+  when: "item_value.stdout is not defined and item_value.msg is defined"
+  vars:
+    item_value: "{{ hostvars['localhost'][item.key] }}"
+
+- name: "{{ ansible_name_module }} | Generate Pre Check Report"
+  ansible.builtin.template:
+    src: templates/job-precheck-report.j2
+    dest: /tmp/{{ precheck_job_name | d('job', true) }}-precheck-report-{{ ansible_date_time.iso8601 }}.csv
+    force: true
+
+

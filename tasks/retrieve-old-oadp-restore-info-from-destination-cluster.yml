@@ -1,0 +1,104 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print old Restore Backup Info'
+  block:
+    - name: '{{ ansible_name_module }} | set backup namespace if not provided'
+      ansible.builtin.set_fact:
+        backup_src_namespace: "{{ 'openshift-migration' if (is_mtc_backup is defined and is_mtc_backup | bool) else 'openshift-adp' }}"
+      when:
+        - not backup_src_namespace is defined or backup_src_namespace == ''
+ 
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backup CR  info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get --no-headers backup.velero.io -n {{ backup_src_namespace }} | awk '{print $1}' 
+      ignore_errors: yes
+      when:
+        - not backup_cr_name is defined or backup_cr_name == ''
+      register: old_backups
+
+    - name: '{{ ansible_name_module }} | set velero backup CR name if not provided'
+      ansible.builtin.set_fact:
+        backup_cr_name: "{{ old_backups.stdout_lines[0]}}"
+      when:
+        - old_backups is defined
+        - old_backups.rc is defined
+        - old_backups.rc == 0 
+        - old_backups.stdout_lines is defined
+        - old_backups.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace included in backup '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup.velero.io {{ backup_cr_name }} -n {{ backup_src_namespace }} -ojsonpath='{.spec.includedNamespaces}' | jq .[] 
+      ignore_errors: yes
+      when:
+        - not namespace_list_targeted is defined or namespace_list_targeted | d([],true) | length == 0
+      register: backup_src_namespaces_out 
+
+    - name: '{{ ansible_name_module }} | Print output of retrieved namespace'
+      ansible.builtin.debug:
+        var: backup_src_namespaces_out.stdout_lines
+        verbosity: 2
+      when:
+        - backup_src_namespaces_out is defined
+        - backup_src_namespaces_out.stdout_lines is defined
+        - backup_src_namespaces_out.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | Print output of retrieved namespace count'
+      ansible.builtin.debug:
+        var: backup_src_namespaces_out.stdout_lines | length
+        verbosity: 2
+      when:
+        - backup_src_namespaces_out is defined
+        - backup_src_namespaces_out.stdout_lines is defined
+        - backup_src_namespaces_out.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | Print output of retrieved namespace list items'
+      ansible.builtin.debug:
+        var: item.replace('"','') 
+        verbosity: 2
+      when:
+        - backup_src_namespaces_out is defined
+        - backup_src_namespaces_out.stdout_lines is defined
+        - backup_src_namespaces_out.stdout_lines | length > 0 
+      loop: "{{ backup_src_namespaces_out.stdout_lines | list }}"
+
+    - name: '{{ ansible_name_module }} | Print output of retrieved namespace list items'
+      ansible.builtin.debug:
+        var: namespace_list_targeted 
+
+    - name: '{{ ansible_name_module }} | set Target namespace list'
+      ansible.builtin.set_fact:
+        namespace_list_targeted: '{{ namespace_list_targeted | default([]) + [ item | replace(reg,rep) ] }}'
+      loop: "{{ backup_src_namespaces_out.stdout_lines }}"
+      vars:
+        reg: "\""
+        rep: ""
+      when:
+        - backup_src_namespaces_out is defined
+        - backup_src_namespaces_out.stdout_lines is defined
+        - backup_src_namespaces_out.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | content of all targeted namespaces'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get all -n {{ item }} 
+      ignore_errors: yes
+      loop: "{{ namespace_list_targeted | list }}"
+      when:
+        - get_ns_content is defined
+        - get_ns_content | bool 
+      register: ns_content
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

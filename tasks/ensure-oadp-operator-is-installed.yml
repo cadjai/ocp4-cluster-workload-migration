@@ -1,0 +1,134 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP cat src cr'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get catalogsource -A --no-headers | grep -i oadp | awk '{print $2}'
+  ignore_errors: true
+  register: oadp_catsrc_exists
+
+- ansible.builtin.assert:
+    that:
+      - oadp_catsrc_exists is defined
+      - oadp_catsrc_exists.rc is defined
+      - oadp_catsrc_exists.rc == 0
+      - oadp_catsrc_exists.stdout is defined
+      - oadp_catsrc_exists.stdout != ''
+      - "'oadp' in oadp_catsrc_exists.stdout"
+    msg: " the OADP Operator Catalog Source must exist in the cluster"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get project {{ oadp_backup_ns }} --no-headers | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_backup_ns_exists
+
+- name: '{{ ansible_name_module }} | Clean oadp Operator manifests from previous runs'
+  when:
+    - oadp_backup_ns_exists is defined
+    - oadp_backup_ns_exists.stdout is defined
+    - oadp_backup_ns_exists.stdout != ''
+    - "oadp_backup_ns in oadp_backup_ns_exists.stdout"
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP subscription cr'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sub -n  {{ oadp_backup_ns }} --no-headers | grep oadp | awk '{print $2}'
+      ignore_errors: true
+      register: oadp_sub_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP OG cr namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get og -n  {{ oadp_backup_ns }} --no-headers | grep oadp | awk '{print $2}'
+      ignore_errors: true
+      register: oadp_og_exists
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP OG if no sub exist in namespace'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} delete og {{ oadp_og_exists.stdout }} -n {{ oadp_backup_ns }}
+      ignore_errors: true
+      when:
+        - oadp_sub_exists.stdout is defined
+        - oadp_sub_exists.stdout == ''
+        - oadp_og_exists.rc is defined
+        - oadp_og_exists.rc == 0
+        - oadp_og_exists.stdout is defined
+        - oadp_og_exists.stdout != ''
+      register: oadp_og_deleted
+
+- name: '{{ ansible_name_module }} | Create OADP Operator NS if it does not exist'
+  when:
+    - oadp_backup_ns_exists.rc >= 0
+    - oadp_backup_ns_exists.stderr is defined
+    - oadp_backup_ns_exists.stderr != ''
+    - "'not found' in oadp_backup_ns_exists.stderr"
+  block:
+    - name: '{{ ansible_name_module }} | Deploy Operators | Create Operator Namespace'
+      ansible.builtin.command: >
+        {{ openshift_cli }} create namespace '{{ oadp_backup_ns }}'
+      failed_when: "operator_ns_created.rc >=1 and not ' already exists' in operator_ns_created.stderr"
+      register: operator_ns_created
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add labels'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ oadp_backup_ns }} --type merge -p '{"metadata":{"labels": {{ oadp_operator.patch_namespace_labels }} }}'
+      when:
+        - oadp_operator.patch_namespace_labels is defined
+        - oadp_operator.patch_namespace_labels != ''
+      register: operator_ns_patched
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | namespace add annotations'
+      ansible.builtin.command: >
+        {{ openshift_cli }} patch namespace {{ oadp_backup_ns }} --type merge -p '{"metadata":{"annotations": {{ oadp_operator.patch_namespace_annotations }} }}'
+      when:
+        - oadp_operator.patch_namespace_annotations is defined
+        - oadp_operator.patch_namespace_annotations != ''
+      register: operator_ns_ann_patched
+
+- name: '{{ ansible_name_module }} | Install oadp Operator'
+  when:
+    - (oadp_sub_exists.stdout is defined and oadp_sub_exists.stdout == '' and oadp_og_exists.stdout is defined and oadp_og_exists.stdout == '') or (operator_ns_created is defined and operator_ns_created.stdout is defined and 'created' in operator_ns_created.stdout )
+  block:
+    - name: '{{ ansible_name_module }} | template | Copy OperatorGroup Config to staging location'
+      ansible.builtin.template:
+        src: "../cluster_post-install_day_two/templates/OperatorGroup.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-OperatorGroup.yml"
+        force: yes
+      vars:
+        operator_group_name: "{{ oadp_operator.group_name }}"
+        operator_deploy_namespace: "{{ oadp_operator.deploy_namespace }}"
+        operator_target_namespace: "{{ oadp_operator.target_namespace }}"
+        operator_name: "{{ oadp_operator.name }}"
+      register: op_csc_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operatorgroup '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-OperatorGroup.yml
+      register: op_csc_deployed
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} | Get package manifest for each operator'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get packagemanifest {{ oadp_operator.name }} -ojsonpath='{.status.channels[-1].currentCSV}{"\n"}{.status.defaultChannel}{"\n"}'
+      register: operator_pkg_info
+
+    - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
+      ansible.builtin.template:
+        src: "../cluster_post-install_day_two/templates/Subscription.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-Subscription.yml"
+        force: yes
+      vars:
+        operator_catalog_name: "{{ oadp_operator.catalog_name }}"
+        operator_target_namespace: "{{ oadp_operator.target_namespace }}"
+        operator_deploy_namespace: "{{ oadp_operator.deploy_namespace }}"
+        operator_name: "{{ oadp_operator.name }}"
+        operator_sub_channel: "{{ oadp_operator.sub_channel }}"
+        operator_csv_version: "{{ oadp_operator.sub_version }}"
+      register: op_sub_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-Subscription.yml
+      register: op_sub_deployed
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for Operator resources to be created'
+      ansible.builtin.wait_for:
+        timeout: 120
+      delegate_to: localhost
+

@@ -1,0 +1,44 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ src_mtc_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve Migration SA Token'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create token --duration={{ mig_sa_token_duration | default("8760h", true) }} \
+        migration-controller -n openshift-migration 
+  register: mig_sa_token_retrieved 
+
+- name: '{{ ansible_name_module }} | Print retrieved SA Token info'
+  when:
+    - mig_sa_token_retrieved is defined
+    - mig_sa_token_retrieved.rc is defined
+    - mig_sa_token_retrieved.rc == 0 
+    - mig_sa_token_retrieved.stdout is defined
+    - mig_sa_token_retrieved.stdout != ''
+  block:
+    - name: '{{ ansible_name_module }} | Print retrieved token output'
+      ansible.builtin.debug:
+        var: mig_sa_token_retrieved 
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | mig_cntl_cluster_sa_token '
+      ansible.builtin.set_fact:
+        mig_cntl_cluster_sa_token: "{{ mig_sa_token_retrieved.stdout }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print SA Token output'
+      ansible.builtin.debug:
+        var: mig_cntl_cluster_sa_token 
+        verbosity: 2
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

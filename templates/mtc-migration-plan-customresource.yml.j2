@@ -1,0 +1,21 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigPlan
+metadata:
+  name: {{ mig_cntl_migplan_name }}
+  namespace: openshift-migration
+spec: 
+  srcMigClusterRef:
+    name: {{ mig_cntl_cluster_name }}
+    namespace: openshift-migration
+  destMigClusterRef:
+    name: {{ mig_cntl_desthost | default('host', true) }}
+    namespace: openshift-migration
+  indirectImageMigration: {{ mig_cntl_indirect_image_migration | default('true', true) }}
+  indirectVolumeMigration:  {{ mig_cntl_indirect_volume_migration | default('true', true) }}
+  liveMigrate: {{ mig_cntl_live_migration | default('false', true) }}
+  refresh: true
+  migStorageRef:
+    name: {{ mig_cntl_storagerepo_name }}
+    namespace: openshift-migration
+  namespaces:
+    {{ namespace_list | to_nice_yaml | indent(4, false) }}

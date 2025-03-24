@@ -1,0 +1,18 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigAnalytic
+metadata:
+  annotations:
+    migplan: {{ mig_cntl_migplan_name }}
+  name: {{ mig_analytic_name | default(mig_cntl_migplan_name, true) }} 
+  namespace: openshift-migration
+  labels:
+    migplan: {{ mig_cntl_migplan_name }} 
+spec:
+  analyzeExtendedPVCapacity: true
+  analyzeImageCount: {{ mig_cntl_miganalytic_analyze_image_count | default('false', true) }}
+  analyzeK8SResources: {{ mig_cntl_miganalytic_analyze_k8resources | default('false', true) }}
+  analyzePVCapacity: {{ mig_cntl_miganalytic_analyze_pv_capacity | default('false', true) }}
+  refresh: {{ mig_cntl_miganalytic_refresh | default('false', true) }}
+  migPlanRef:
+    name: {{ mig_cntl_migplan_name }} 
+    namespace: openshift-migration

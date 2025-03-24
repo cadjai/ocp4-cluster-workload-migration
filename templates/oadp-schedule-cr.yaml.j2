@@ -1,0 +1,22 @@
+apiVersion: velero.io/v1
+kind: Schedule 
+metadata:
+  name: {{ backup_name }}
+  namespace: {{ oadp_backup_ns }} 
+  labels:
+    cluster-id: {{ cluster_id }}
+    cluster-name: {{ cluster_name }}
+spec:
+  schedule: {{ oadp_cron_schedule_expression | default('01 0 * * *', true) }}
+  skipImmediately: false
+  template:
+    hooks: {}
+    csiSnapshotTimeout: {{ bkp_csi_snapshot_timeout | default('5h', true) }}
+    defaultVolumesToRestic: true
+    snapshotMoveData: true
+    ttl: 720h0m0s
+    defaultVolumesToFsBackup: false
+    excludedResources:
+      {{ excluded_resources_list | to_nice_yaml | indent(6, false) }}
+    includedNamespaces:
+      {{ namespace_list | to_nice_yaml | indent(6, false) }}

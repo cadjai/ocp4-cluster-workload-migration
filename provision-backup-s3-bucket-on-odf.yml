@@ -1,0 +1,56 @@
+- name: ' Konductor | Provision UPI Infra | provisione-backup-s3-bucket-on-odf.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Create S3 Bucket on ODF"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the S3 Bucket Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_bucket_cluster_console_url is defined
+              - backup_bucket_cluster_console_url != ''
+            msg: "The S3 Bucket cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the S3 Bucket Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_bucket_cluster_token is defined
+              - backup_bucket_cluster_token != ''
+            msg: "The S3 Bucket cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            backup_bucket_cluster_console_port: '6443'
+          when:
+            - not backup_bucket_cluster_console_port is defined or backup_bucket_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | assert | the S3 bucket namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_bucket_namespace is defined
+              - backup_bucket_namespace != ''
+            msg: "The S3 bucket namespace is required to create the bucket"
+
+        - name: '{{ ansible_name_module }} | assert | the S3 bucket namespace is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_bucket_name is defined
+              - backup_bucket_name != ''
+            msg: "The S3 bucket name is required to create the bucket"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
+      ansible.builtin.import_tasks: tasks/create-obc-on-odf-cluster.yml 
+

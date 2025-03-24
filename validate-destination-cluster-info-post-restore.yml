@@ -1,0 +1,43 @@
+- name: ' Konductor | Provision UPI Infra | validate-destination-cluster-info-post-restore.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Retieve and Validate Restore info"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - restore_dest_cluster_console_url is defined
+              - restore_dest_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - restore_dest_cluster_token is defined
+              - restore_dest_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            restore_dest_cluster_console_port: '6443'
+          when:
+            - not restore_dest_cluster_console_port is defined or restore_dest_cluster_console_port == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source restore Cluster Info retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-oadp-restore-info-from-dest-cluster.yml 
+      vars:
+        skip_api_login_logout: 'true'
+        retrieve_restore_info: 'true'
+        apply_ns_exlusion: 'true'
+        run_postcheck: 'true'
+

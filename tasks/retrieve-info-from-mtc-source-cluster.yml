@@ -1,0 +1,160 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ src_mtc_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print SA Token'
+  when:
+    - retrieve_satoken is defined 
+    - retrieve_satoken | bool 
+  block:
+    - name: '{{ ansible_name_module }} | Retrieve Migration SA Token'
+      ansible.builtin.command: >
+        {{ openshift_cli }} create token --duration={{ mig_sa_token_duration | default("8760h", true) }} \
+            migration-controller -n openshift-migration 
+      register: mig_sa_token_retrieved 
+
+    - name: '{{ ansible_name_module }} | Print retrieved SA Token info'
+      when:
+        - mig_sa_token_retrieved is defined
+        - mig_sa_token_retrieved.rc is defined
+        - mig_sa_token_retrieved.rc == 0 
+        - mig_sa_token_retrieved.stdout is defined
+        - mig_sa_token_retrieved.stdout != ''
+      block:
+        - name: '{{ ansible_name_module }} | Print retrieved token output'
+          ansible.builtin.debug:
+            var: mig_sa_token_retrieved 
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | set_fact | mig_cntl_cluster_sa_token '
+          ansible.builtin.set_fact:
+            mig_cntl_cluster_sa_token: "{{ mig_sa_token_retrieved.stdout }}"
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print SA Token output'
+          ansible.builtin.debug:
+            var: mig_cntl_cluster_sa_token 
+            verbosity: 2
+
+- name: '{{ ansible_name_module }} | Add Migration Plan Resources to MTC '
+  when:
+    - add_migration_plan is defined 
+    - add_migration_plan | bool 
+  block:
+    - name: '{{ ansible_name_module }} | set namespace list if not provided'
+      #when:
+      #  - not namespace_list is defined or namespace_list | length == 0 or namespace_list == ''
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+          register: namespaces_all_out
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get project --no-headers | egrep -vi "{{ excluded_ns | join('|') }}"  | awk '{print $1}'
+          when:
+            - apply_ns_exlusion is defined
+            - apply_ns_exlusion | bool
+            - excluded_ns is defined
+            - excluded_ns | length > 0
+          register: namespaces_filtered_out
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace list output '
+          ansible.builtin.debug:
+            var: namespaces_all_out
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace count output '
+          ansible.builtin.debug:
+            msg: "The number of all namesapces is : {{ namespaces_all_out.stdout_lines | length }}"
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace list output '
+          ansible.builtin.debug:
+            var: namespaces_filtered_out
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace count output '
+          ansible.builtin.debug:
+            msg: " The number of filtered namesapces is : {{ namespaces_filtered_out.stdout_lines | length }}"
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
+          ansible.builtin.debug:
+            var: ansible_facts['namespace_list'] 
+            verbosity: 2
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            namespace_list: "{{ namespace_list | default([]) + [ item ] }}"
+          loop: "{{ namespaces_filtered_out.stdout_lines }}"
+          when:
+            - namespaces_filtered_out is defined
+            - namespaces_filtered_out.stdout_lines is defined
+            - namespaces_filtered_out.stdout_lines | length > 0 
+            - item is defined
+            - item != "" 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
+          ansible.builtin.debug:
+            var: namespace_list 
+            verbosity: 2
+          #when:
+          #  - namespace_list is defined
+          #  - namespace_list | length > 0 
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+          ansible.builtin.debug:
+            var: item 
+            verbosity: 2
+          loop: "{{ namespace_list | default([], true) }}"
+          when:
+            - namespace_list is defined
+            - namespace_list | length > 0 
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | get bound pvc per namespace list '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get pvc -A -o json | jq -r '.items[] | select(.status.phase=="Bound") | {"name": .metadata.name, "namespace": .metadata.namespace, "pvccount": .metadata.namespace | length}' | jq -s 
+          when:
+            - namespace_list is defined
+            - namespace_list | length > 0 
+          register: bound_pvcs_innamespaces
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | bound pvcs in namespace count '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get pvc -n {{ item }} --no-headers | egrep -i "bound" | wc -l 
+          loop: "{{ namespace_list | default([], true) }}"
+          when:
+            - namespace_list is defined
+            - namespace_list | length > 0 
+          register: namespaces_bound_pvcs_count
+
+        - name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
+          ansible.builtin.set_fact:
+            namespace_list_targeted: "{{ namespace_list_targeted | default([], true) + [item.item] }}"
+          when:
+            - namespaces_bound_pvcs_count is defined
+            - namespaces_bound_pvcs_count.results is defined
+            - namespaces_bound_pvcs_count.results | length > 0 
+            - item.stdout is defined
+            - item.stdout| int <= 26 
+
+        - name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
+          ansible.builtin.set_fact:
+            namespace_list_manual: "{{ namespace_list | community.general.lists_symmetric_difference(namespace_list_targeted) }}"
+          when:
+            - namespace_list_targeted is defined
+            - namespace_list_targeted | length > 0 
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

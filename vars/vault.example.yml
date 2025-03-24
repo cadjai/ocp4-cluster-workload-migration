@@ -1,0 +1,11 @@
+# Use this sample file to create your vaulted inventory and then 
+# run your playbook passing the vault file as an inventory file 
+# and provide the vault option like --vault-id @prompt
+# Ovirt Cluster Info
+
+
+# OCP cluster Config
+vault_ocp_cluster_user: ''
+vault_ocp_cluster_user_password: ''
+vault_ocp_cluster_console_url: ''
+

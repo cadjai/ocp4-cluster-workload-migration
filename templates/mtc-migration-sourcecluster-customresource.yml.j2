@@ -1,0 +1,17 @@
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigCluster
+metadata:
+  name: {{ mig_cntl_cluster_name }}
+  namespace: openshift-migration
+spec:
+  url: {{ mig_cntl_cluster_api_url }}:{{ mig_cntl_cluster_api_port | default('6443', true) }}
+{% if mig_cntl_cluster_internal_registry_url is defined and mig_cntl_cluster_internal_registry_url != '' %}
+  exposedRegistryPath: {{ mig_cntl_cluster_internal_registry_url.split('://')[1] }}
+{% else %}
+  exposedRegistryPath:
+{% endif %}
+  insecure:  {{ mig_cntl_cluster_internal_registry_insecure | default("true", true) }}
+  isHostCluster: false
+  serviceAccountSecretRef:
+    name:  {{ mig_cntl_cluster_token_sa_secret_name }}
+    namespace: {{ mig_cntl_cluster_token_sa_secret_ns | default("openshift-config", true) }}

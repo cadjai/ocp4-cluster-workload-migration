@@ -1,0 +1,352 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print Backup Info'
+  when:
+    - retrieve_restore_info is defined 
+    - retrieve_restore_info | bool 
+  block:
+    - name: '{{ ansible_name_module }} | set restore namespace if not provided'
+      ansible.builtin.set_fact:
+        restore_src_namespace: "{{ 'openshift-migration' if (is_mtc_restore is defined and is_mtc_restore | bool) else 'openshift-adp' }}"
+      when:
+        - not restore_src_namespace is defined or restore_src_namespace == ''
+
+    - name: '{{ ansible_name_module }} | Retrieve restore object info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get Restore.velero.io --no-headers -n {{ restore_src_namespace }} | awk '{print $1}' 
+      register: restore_cr_retrieved 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  restore cr output '
+      ansible.builtin.debug:
+        var: restore_cr_retrieved.stdout_lines[0]
+        verbosity: 2
+      when:
+        - restore_cr_retrieved is defined
+        - restore_cr_retrieved.rc is defined
+        - restore_cr_retrieved.rc == 0 
+        - restore_cr_retrieved.stdout_lines is defined
+        - restore_cr_retrieved.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | Retrieve restore object info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get Restore.velero.io {{ restore_cr_retrieved.stdout_lines[0] }} -n {{ restore_src_namespace }}  -o jsonpath='{.status}{"\n"}'  
+      when:
+        - restore_cr_retrieved is defined
+        - restore_cr_retrieved.rc is defined
+        - restore_cr_retrieved.rc == 0 
+        - restore_cr_retrieved.stdout_lines is defined
+        - restore_cr_retrieved.stdout_lines | length > 0 
+      register: restore_cr_status_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve velero info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod --no-headers -n {{ restore_src_namespace }} | grep velero | awk '{print $1}' 
+      register: velero_po_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve velero pod phase '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}'  
+      when:
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0 
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != '' 
+      register: velero_po_phase_retrieved 
+
+    - name: '{{ ansible_name_module }} | assert | the Restore object passed validation '
+      ansible.builtin.assert:
+        that:
+          - velero_po_phase_retrieved is defined
+          - velero_po_phase_retrieved.rc is defined
+          - velero_po_phase_retrieved.rc == 0 
+          - velero_po_phase_retrieved.stdout_lines is defined
+          - velero_po_phase_retrieved.stdout_lines | length > 0 
+          - "not 'phase: FailedValidation' in velero_po_phase_retrieved.stdout" 
+        msg: "The Restore object didn't pass validation. No need to proceed. Please investigate"
+
+    - name: '{{ ansible_name_module }} | Retrieve velero restore error '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} logs {{ velero_po_retrieved.stdout }} -n {{ restore_src_namespace }} | grep -i error  
+      when:
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0 
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != '' 
+      register: velero_po_errors_retrieved 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  velero pod phase output '
+      ansible.builtin.debug:
+        msg: "The velero phase is : {{ velero_po_phase_retrieved.stdout }}"
+        verbosity: 2
+      when:
+        - velero_po_phase_retrieved is defined
+        - velero_po_phase_retrieved.rc is defined
+        - velero_po_phase_retrieved.rc == 0 
+        - velero_po_phase_retrieved.stdout is defined
+        - velero_po_phase_retrieved.stdout != '' 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  velero error output '
+      ansible.builtin.debug:
+        msg: "The following are the velero processing error from the last restore run \n\n {{ velero_po_errors_retrieved.stdout }}"
+        verbosity: 2
+      when:
+        - velero_po_errors_retrieved is defined
+        - velero_po_errors_retrieved.rc is defined
+        - velero_po_errors_retrieved.rc == 0
+        - velero_po_errors_retrieved.stdout is defined
+    - name: '{{ ansible_name_module }} | Retrieve DataDownload info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get datadownload --no-headers -n {{ restore_src_namespace }} | awk '{print $1}' 
+      register: ddwn_list_retrieved 
+
+    - name: '{{ ansible_name_module }} | Retrieve DataDownload status info'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get datadownload {{ item }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}' 
+      loop: "{{ ddwn_list_retrieved.stdout_lines }}"
+      when:
+        - ddwn_list_retrieved is defined
+        - ddwn_list_retrieved.rc is defined
+        - ddwn_list_retrieved.rc == 0 
+        - ddwn_list_retrieved.stdout_lines is defined
+        - ddwn_list_retrieved.stdout_lines | length > 0
+      register: ddwn_status_retrieved 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all datadownload count output '
+      ansible.builtin.debug:
+        msg: "The number of all restore data downloads  is : {{ ddwn_list_retrieved.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed datadownload info output '
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      when:
+        - ddwn_status_retrieved is defined
+        - ddwn_status_retrieved.results is defined
+        - ddwn_status_retrieved.results | length > 0 
+        - item is defined
+        - item.stdout is defined
+        - item.stdout != '' 
+        - "'failed' in item.stdout"
+      loop: "{{ ddwn_status_retrieved.results }}"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+      register: namespaces_all_out
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | egrep -vi "{{ excluded_ns | join('|') }}"  | awk '{print $1}'
+      when:
+        - apply_ns_exlusion is defined
+        - apply_ns_exlusion | bool
+        - excluded_ns is defined
+        - excluded_ns | length > 0
+      register: namespaces_filtered_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_all_out
+        verbosity: 2    
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace count output '
+      ansible.builtin.debug:
+        msg: "The number of all namesapces is : {{ namespaces_all_out.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_filtered_out
+        verbosity: 2
+      when:
+        - namespaces_filtered_out is defined
+        - namespaces_filtered_out.rc is defined
+        - namespaces_filtered_out.rc == 0 
+        - namespaces_filtered_out.stdout is defined
+        - namespaces_filtered_out.stdout != '' 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace count output '
+      ansible.builtin.debug:
+        msg: " The number of filtered namesapces is : {{ namespaces_filtered_out.stdout_lines | length }}"
+        verbosity: 2
+      when:
+        - namespaces_filtered_out is defined
+        - namespaces_filtered_out.rc is defined
+        - namespaces_filtered_out.rc == 0 
+        - namespaces_filtered_out.stdout is defined
+        - namespaces_filtered_out.stdout != '' 
+
+- name: '{{ ansible_name_module }} | Post Restore  Checks'
+  when:
+    - run_postcheck is defined
+    - run_postcheck | bool
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Ensure there are no failing pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --no-headers | egrep -v 'Running | Completed' | wc -l
+      register: check_failing_pods_count
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 1 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_failing_pods_count: "{{ check_failing_pods_count }}"
+      when:
+        - check_failing_pods_count.stdout is defined or check_failing_pods_count.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve failing pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --no-headers | egrep -v 'Running | Completed' | awk '{print $2 " -n " $1}'
+      register: check_failing_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 2 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_failing_pods: "{{ check_failing_pods }}"
+      when:
+        - check_failing_pods.stdout is defined or check_failing_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve unschedulable pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --field-selector=status.phase=Pending -o json | jq '.items[]| {name: .metadata.name, namespace: .metadata.namespace, status: .status}'
+      register: check_pending_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 3 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_pending_pods: "{{ check_pending_pods }}"
+      when:
+        - check_pending_pods.stdout is defined or check_pending_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve unschedulable pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --field-selector=status.phase=Pending -o json | jq '.items[]|select(any( .status.conditions[]?; .reason == "Unschedulable"))| {name: .metadata.name, namespace: .metadata.namespace, status: .status}'
+      register: check_unschedulable_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 4 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_unschedulable_pods: "{{ check_unschedulable_pods }}"
+      when:
+        - check_unschedulable_pods.stdout is defined or check_unschedulable_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve pending pods with "ImagePullBackOff"'
+      ansible.builtin.shell: >
+        {{ openshift_cli }}  get po --all-namespaces --field-selector=status.phase=Pending -o json | jq '.items[]|select(any( .status.conditions[]?; .reason != "Unschedulable"))| {name: .metadata.name, namespace: .metadata.namespace, reason: .status.containerStatuses[0].state.waiting.reason,  message: .status.containerStatuses[0].state.waiting.message, image: .status.containerStatuses[0].image, name: .status.containerStatuses[0].name}' 
+      register: check_image_pullbck_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 5 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_image_pullbck_pods: "{{ check_image_pullbck_pods }}"
+      when:
+        - check_image_pullbck_pods.stdout is defined or check_image_pullbck_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve pods with 3+ restarts '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --field-selector=status.phase=Running -o json | jq '.items[]|select(any( .status.containerStatuses[]?; .restartCount > 3))| {name: .metadata.name, namespace: .metadata.namespace, status: .status}'
+      register: check_restarting_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 6 of 10 '
+      ansible.builtin.set_fact:
+        pcheck_restarting_pods: "{{ check_restarting_pods }}"
+      when:
+        - check_restarting_pods.stdout is defined or check_restarting_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Restarting Pods output'
+      ansible.builtin.debug:
+        var: check_restarting_pods
+        verbosity: 2
+      when:
+        - check_restarting_pods.rc is defined
+        - check_restarting_pods.rc == 0
+        - check_restarting_pods.stdout_lines is defined
+        - check_restarting_pods.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | Ensure no PVC with pending state'
+      block:
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve storage classes '
+          ansible.builtin.command: >
+            {{ openshift_cli }} get sc -o jsonpath="{range .items[*]}{.metadata.name}{.metadata.annotations}{.parameters}{end}" 
+          register: check_storage_classes
+
+        - name: '{{ ansible_name_module }} | set_fact | pcheck fact 7 of 10 '
+          ansible.builtin.set_fact:
+            pcheck_storage_classes: "{{ check_storage_classes }}"
+          when:
+            - check_storage_classes.stdout is defined or check_storage_classes.stderr
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print storage class output '
+          ansible.builtin.debug:
+            var: item
+            verbosity: 2
+          loop: "{{ check_storage_classes.stdout_lines }}"
+
+        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve pending pvc '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get pvc -A --no-headers | grep -i pending | awk '{print $2 " -n " $1}'
+          register: check_pending_pvcs
+
+        - name: '{{ ansible_name_module }} | set_fact | pcheck fact 8 of 10 '
+          ansible.builtin.set_fact:
+            pcheck_pending_pvcs: "{{ check_pending_pvcs }}"
+          when:
+            - check_pending_pvcs.stdout is defined or check_pending_pvcs.stderr
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc output '
+          ansible.builtin.debug:
+            var: item
+            verbosity: 2
+          loop: "{{ check_pending_pvcs.stdout_lines }}"
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} describe | desribe pvc '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} describe pvc {{ item }}
+          loop: "{{ check_pending_pvcs.stdout_lines }}"
+          when:
+            - item is defined
+            - item != ''
+          register: check_pending_pvcs_info
+
+        - name: '{{ ansible_name_module }} | set_fact | pcheck fact 9 of 10 '
+          ansible.builtin.set_fact:
+            pcheck_pending_pvcs_info: "{{ check_pending_pvcs_info }}"
+          when:
+            - check_pending_pvcs_info.results is defined
+            - check_pending_pvcs_info.results | length > 0 
+            - check_pending_pvcs_info.results[0].stdout is defined or check_pending_pvcs_info[0].results.stderr
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc info output '
+          ansible.builtin.debug:
+            var: item
+            verbosity: 2
+          loop: "{{ check_pending_pvcs_info.results }}"
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve pvc labels and annotations '
+          ansible.builtin.command: >
+            {{ openshift_cli }} get pvc {{ item }} -ojsonpath='{range .items[*]}{@.metadata.labels}{@.metadata.annotations}{"\n"}'
+          loop: "{{ check_pending_pvcs.stdout_lines }}"
+          when:
+            - item is defined
+            - item != ''
+          register: check_pending_pvcs_labels
+
+        - name: '{{ ansible_name_module }} | set_fact | pcheck fact 10 of 10 '
+          ansible.builtin.set_fact:
+            pcheck_pending_pvcs_labels: "{{ check_pending_pvcs_labels }}"
+          when:
+            - check_pending_pvcs_labels.results is defined 
+            - check_pending_pvcs_labels.results | length > 0 
+            - check_pending_pvcs_labels.results[0].stdout is defined or check_pending_pvcs_labels.results[0].stderr
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

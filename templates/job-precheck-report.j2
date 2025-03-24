@@ -1,0 +1,6 @@
+Check Number,Check Name,Status,Results
+{% for checkrslt in reg_vars_list %}
+{{ loop.index }},{{ checkrslt }},{% if hostvars['localhost'][checkrslt] is succeeded and hostvars['localhost'][checkrslt] is not skipped %}PASS{% else %}FAIL{% endif %},{%if hostvars['localhost'][checkrslt].stdout is defined %}{{ hostvars['localhost'][checkrslt].stdout | quote | replace('\n', ' ') }}{% elif hostvars['localhost'][checkrslt].msg is defined%}{{hostvars['localhost'][checkrslt].msg | quote }}{% else %}N/A{% endif %}
+
+{% endfor %}
+

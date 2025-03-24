@@ -1,0 +1,99 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Retrieve and Print Backup Info'
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve default storage class '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get sc -o jsonpath='{.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}{"\n"}'
+      ignore_errors: 'true'
+      register: pcheck_default_storageclass
+
+    - name: '{{ ansible_name_module }} | Retrieve default snapshot class object info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get volumesnapshotclass -o jsonpath='{.items[?(@.metadata.annotations.snapshot\.storage\.kubernetes\.io/is-default-class=="true")].metadata.name}{"\n"}' 
+      ignore_errors: 'true'
+      register: pcheck_restore_snapshot_class 
+
+    - name: '{{ ansible_name_module }} | assert | there is a default storage class object '
+      ansible.builtin.assert:
+        that:
+          - pcheck_default_storageclass is defined
+          - pcheck_default_storageclass.rc is defined
+          - pcheck_default_storageclass.rc == 0 
+          - pcheck_default_storageclass.stdout_lines is defined
+          - pcheck_default_storageclass.stdout_lines | length > 0 
+        msg: "The default storageclass object is required to porform a restore operation."
+
+    - name: '{{ ansible_name_module }} | assert | there is a default volumesnapshot class object '
+      ansible.builtin.assert:
+        that:
+          - pcheck_restore_snapshot_class is defined
+          - pcheck_restore_snapshot_class.rc is defined
+          - pcheck_restore_snapshot_class.rc == 0 
+          - pcheck_restore_snapshot_class.stdout_lines is defined
+          - pcheck_restore_snapshot_class.stdout_lines | length > 0 
+        msg: "The default volumesnapshotclass object is required to porform a restore operation."
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve default storage class provisioner'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get sc {{ pcheck_default_storageclass.stdout }} -o jsonpath='{.provisioner}{"\n"}'
+      ignore_errors: 'true'
+      register: pcheck_sc_provisioner 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve volumesnapshot class provisioner'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get volumesnapshotclass {{ pcheck_restore_snapshot_class.stdout }} -o jsonpath='{.driver}{"\n"}'
+      ignore_errors: 'true'
+      register: pcheck_vsc_driver 
+
+    - name: '{{ ansible_name_module }} | assert | the driver for the volume snapshot class is the same as the provisioner of the default storageclass object '
+      ansible.builtin.assert:
+        that:
+          - pcheck_sc_provisioner is defined
+          - pcheck_sc_provisioner.rc is defined
+          - pcheck_sc_provisioner.rc == 0 
+          - pcheck_sc_provisioner.stdout_lines is defined
+          - pcheck_sc_provisioner.stdout_lines | length > 0 
+          - pcheck_vsc_driver is defined
+          - pcheck_vsc_driver.rc is defined
+          - pcheck_vsc_driver.rc == 0 
+          - pcheck_vsc_driver.stdout_lines is defined
+          - pcheck_vsc_driver.stdout_lines | length > 0 
+          - pcheck_sc_provisioner.stdout == pcheck_vsc_driver.stdout
+        msg: "The driver for default volumesnapshotclass object has to be the same as the provisioner for the default storage class to porform a restore operation."
+
+    - name: '{{ ansible_name_module }} | Retrieve default snapshot class object labels '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get volumesnapshotclass {{ pcheck_restore_snapshot_class.stdout }} -ojsonpath='{range .items[*]}{@.metadata.labels}{"\n"}' | jq . | grep -i "velero.io/csi-volumesnapshot-class" 
+      ignore_errors: 'true'
+      when:
+        - pcheck_restore_snapshot_class is defined
+        - pcheck_restore_snapshot_class.rc is defined
+        - pcheck_restore_snapshot_class.rc == 0 
+        - pcheck_restore_snapshot_class.stdout is defined
+        - pcheck_restore_snapshot_class.stdout != '' 
+      register: pcheck_restore_snapshot_class_labels
+
+    - name: '{{ ansible_name_module }} | Retrieve default snapshot class object labels '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} label volumesnapshotclass {{ pcheck_restore_snapshot_class.stdout }} velero.io/csi-volumesnapshot-class=true 
+      when:
+        - pcheck_restore_snapshot_class_labels is defined
+        - pcheck_restore_snapshot_class_labels.rc is defined
+        - (pcheck_restore_snapshot_class_labels.rc == 0 and pcheck_restore_snapshot_class_labels.stdout is defined and pcheck_restore_snapshot_class_labels.stdout != '' and "not 'metadata.labels.velero.io/csi-volumesnapshot-class' in pcheck_restore_snapshot_class_labels.stdout") or  pcheck_restore_snapshot_class_labels.rc > 0
+      register: pcheck_restore_snapshot_class_patched
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

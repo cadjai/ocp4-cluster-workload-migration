@@ -1,0 +1,405 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | set namespace list if not provided'
+  when:
+    - not namespace_list is defined or namespace_list | length == 0 or namespace_list == ''
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+      register: namespaces_all_out
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | egrep -vi "{{ excluded_ns | join('|') }}"  | awk '{print $1}'
+      when:
+        - apply_ns_exlusion is defined
+        - apply_ns_exlusion | bool
+        - excluded_ns is defined
+        - excluded_ns | length > 0
+      register: namespaces_filtered_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_all_out
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace count output '
+      ansible.builtin.debug:
+        msg: "The number of all namesapces is : {{ namespaces_all_out.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_filtered_out
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace count output '
+      ansible.builtin.debug:
+        msg: " The number of filtered namesapces is : {{ namespaces_filtered_out.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+      ansible.builtin.set_fact:
+        namespace_list: "{{ namespaces_filtered_out.stdout_lines if namespaces_filtered_out is defined and namespaces_filtered_out.stdout_lines | length > 0 else namespaces_all_out.stdout_lines }}"
+      when:
+        - (namespaces_all_out is defined and  namespaces_all_out.stdout_lines is defined and namespaces_all_out.stdout_lines | length > 0) or (namespaces_filtered_out is defined and namespaces_filtered_out.stdout_lines is defined and namespaces_filtered_out.stdout_lines | length > 0)
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
+      ansible.builtin.debug:
+        var: namespace_list 
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+      ansible.builtin.debug:
+        var: item 
+        verbosity: 2
+      loop: "{{ namespace_list }}"
+
+###TODO Add tasks to generate a report for these checks
+- name: '{{ ansible_name_module }} | Pre Migration Checks'
+  when:
+    - run_precheck is defined
+    - run_precheck | bool 
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Ensure there are no failing pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --no-headers | egrep -v 'Running | Completed' | wc -l
+      register: check_failing_pods_count
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 1 of n '
+      ansible.builtin.set_fact:
+        pcheck_failing_pods_count: "{{ check_failing_pods_count }}"
+      when:
+        - check_failing_pods_count.stdout is defined or check_failing_pods_count.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve failing pods '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --no-headers | egrep -v 'Running | Completed' | awk '{print $2 " -n " $1}'
+      register: check_failing_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 2 of n '
+      ansible.builtin.set_fact:
+        pcheck_failing_pods: "{{ check_failing_pods }}"
+      when:
+        - check_failing_pods.stdout is defined or check_failing_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve pods with 3+ restarts '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get po --all-namespaces --field-selector=status.phase=Running -o json | jq '.items[]|select(any( .status.containerStatuses[]?; .restartCount > 3))| {name: .metadata.name, namespace: .metadata.namespace, status: .status}'
+      register: check_restarting_pods
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 3 of n '
+      ansible.builtin.set_fact:
+        pcheck_restarting_pods: "{{ check_restarting_pods }}"
+      when:
+        - check_restarting_pods.stdout is defined or check_restarting_pods.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | Retrieve Pending CSRs '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get csr -A | grep -i pending
+      register: check_pending_csrs
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 4 of n '
+      ansible.builtin.set_fact:
+        pcheck_pending_csrs: "{{ check_pending_csrs }}"
+      when:
+        - check_pending_csrs.stdout is defined or check_pending_csrs.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Failing Pods output'
+      ansible.builtin.debug:
+        var: check_failing_pods.stdout_lines
+        verbosity: 2
+      when:
+        - check_failing_pods.rc is defined
+        - check_failing_pods.rc == 0
+        - check_failing_pods.stdout_lines is defined
+        - check_failing_pods.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Restarting Pods output'
+      ansible.builtin.debug:
+        var: check_restarting_pods
+        verbosity: 2
+      when:
+        - check_restarting_pods.rc is defined
+        - check_restarting_pods.rc == 0
+        - check_restarting_pods.stdout_lines is defined
+        - check_restarting_pods.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Pending CSRs output'
+      ansible.builtin.debug:
+        msg: "Below is the list of pending CRSs \n\n {{ check_pending_csrs.stdout_lines }}"
+        verbosity: 2
+      when:
+        - check_pending_csrs.rc is refined
+        - check_pending_csrs.rc == 0
+        - check_pending_csrs.stdout_lines is refined
+        - check_pending_csrs.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | assert | Ensure no failing conditions'
+      ansible.builtin.assert:
+        that:
+          - check_failing_pods.stdout_lines is defined
+          - check_failing_pods.stdout_lines | length > 0
+          - check_pending_csrs.stdout_lines is refined
+          - check_pending_csrs.stdout_lines | length > 0
+          - check_pending_csrs.stdout_lines is refined
+          - check_pending_csrs.stdout_lines | length > 0
+        msg: "There should not be any failing prereq condtion while doing a migration"
+      when:
+        - not skip_prereq_validation is defined or not skip_prereq_validation | bool
+
+- name: '{{ ansible_name_module }} | Ensure no PVC with pending state'
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve storage classes '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get sc  -o jsonpath='{@}' 
+      register: check_storage_classes
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 5 of n '
+      ansible.builtin.set_fact:
+        pcheck_storage_classes: "{{ check_storage_classes }}"
+      when:
+        - check_storage_classes.stdout is defined or check_storage_classes.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print storage class output '
+      ansible.builtin.debug:
+        var: item
+        verbosity: 2
+      loop: "{{ check_storage_classes.stdout_lines }}"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve pending pvc '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pvc -A --no-headers | grep -i pending | awk '{print $2 " -n " $1}'
+      register: check_pending_pvcs
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 6 of n '
+      ansible.builtin.set_fact:
+        pcheck_pending_pvcs: "{{ check_pending_pvcs }}"
+      when:
+        - check_pending_pvcs.stdout is defined or check_pending_pvcs.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc output '
+      ansible.builtin.debug:
+        var: item
+        verbosity: 2
+      loop: "{{ check_pending_pvcs.stdout_lines }}"
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} describe | desribe pvc '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} describe pvc {{ item }}
+      loop: "{{ check_pending_pvcs.stdout_lines }}"
+      when:
+        - item is defined
+        - item != ''
+      register: check_pending_pvcs_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 7 of n '
+      ansible.builtin.set_fact:
+        pcheck_pending_pvcs_info: "{{ check_pending_pvcs_info }}"
+      when:
+        - check_pending_pvcs_info.results is defined
+        - check_pending_pvcs_info.results | length > 0 
+        - check_pending_pvcs_info.results[0].stdout is defined or check_pending_pvcs_info.results[0].stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc info output '
+      ansible.builtin.debug:
+        var: item
+        verbosity: 2
+      loop: "{{ check_pending_pvcs_info.results }}"
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve pvc labels and annotations '
+      ansible.builtin.command: >
+        {{ openshift_cli }} get pvc {{ item }} -ojsonpath='{range .items[*]}{@.metadata.labels}{@.metadata.annotations}{"\n"}'
+      loop: "{{ check_pending_pvcs.stdout_lines }}"
+      when:
+        - item is defined
+        - item != ''
+      register: check_pending_pvcs_labels
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 8 of n '
+      ansible.builtin.set_fact:
+        pcheck_pending_pvcs_labels: "{{ check_pending_pvcs_labels }}"
+      when:
+        - check_pending_pvcs_labels.results is defined
+        - check_pending_pvcs_labels.results | length > 0 
+        - check_pending_pvcs_labels.results[0].stdout is defined or check_pending_pvcs_labels.results[0].stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc labels output '
+      ansible.builtin.debug:
+        var: item
+        verbosity: 2
+      loop: "{{ check_pending_pvcs_labels.results }}"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | retrieve workloads with pvc labels '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get dc,deployments,statefulsets \
+            -l {{ item.stdout.replace('"', '').replace('{','').replace('}','').replace(':', '=') }} \
+           {{ item.item.split(' ')[1] }} {{ item.item.split(' ')[2] }} -o yaml | grep -i -A5 persistentvolumeclaim | grep {{ item.item.split(' ')[0] }}
+      loop: "{{ check_pending_pvcs_labels.results }}"
+      ignore_errors: yes
+      when:
+        - item is defined
+        - item.item is defined
+        - item.item != ''
+      register: check_pending_pvcs_workloads_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 9 of n '
+      ansible.builtin.set_fact:
+        pcheck_pending_pvcs_workloads_info: "{{ check_pending_pvcs_workloads_info }}"
+      when:
+        - check_pending_pvcs_workloads_info.results is defined
+        - check_pending_pvcs_workloads_info.results | length > 0 
+        - check_pending_pvcs_workloads_info.results[0].stdout is defined or check_pending_pvcs_workloads_info.results[0].stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print pending pvc workload info output '
+      ansible.builtin.debug:
+        var: item.stdout_lines
+        verbosity: 2
+      loop: "{{ check_pending_pvcs_workloads_info.results }}"
+
+- name: '{{ ansible_name_module }} | Retrieve cluster stats '
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | node '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get nodes --no-headers | grep worker | grep -v infra | awk '{print $1}'
+      register: check_worker_nodes
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 10 of n '
+      ansible.builtin.set_fact:
+        pcheck_worker_nodes: "{{ check_worker_nodes }}"
+      when:
+        - check_worker_nodes.stdout is defined or check_worker_nodes.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all worker node count output '
+      ansible.builtin.debug:
+        msg: "The number of all worker nodes (exluding infra nodes) on the source cluster  is : {{ check_worker_nodes.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | node taints ,labels and annotations'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get node {{ item }} -ojsonpath='{range .items[*]}{@.metadata.name}{@.metadata.labels}{@.metadata.annotations}{@.spec.taints}{@.status}{"\n"}' 
+      loop: "{{ check_worker_nodes.stdout_lines }}"
+      when:
+        - check_worker_nodes is defined
+        - check_worker_nodes.rc is defined
+        - check_worker_nodes.rc == 0 
+        - check_worker_nodes.stdout_lines is defined
+        - check_worker_nodes.stdout_lines | length > 0 
+      register: check_worker_node_labels
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 11 of n '
+      ansible.builtin.set_fact:
+        pcheck_worker_node_labels: "{{ check_worker_node_labels }}"
+      when:
+        - check_worker_node_labels.results is defined
+        - check_worker_node_labels.results | length > 0 
+        - check_worker_node_labels.results[0].stdout is defined or check_worker_node_labels.results[0].stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all worker node labels, taints and annotactions output '
+      ansible.builtin.debug:
+        msg: "The following is the list of configured labels, taints and annotations of all worker nodes (exluding infra nodes) on the source cluster  is \n\n : {{ check_worker_node_labels.results }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | node info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get node  {{ item }} -ojson | jq . 
+      loop: "{{ check_worker_nodes.stdout_lines }}"
+      when:
+        - check_worker_nodes is defined
+        - check_worker_nodes.rc is defined
+        - check_worker_nodes.rc == 0 
+        - check_worker_nodes.stdout_lines is defined
+        - check_worker_nodes.stdout_lines | length > 0 
+      register: check_worker_nodes_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 12 of n '
+      ansible.builtin.set_fact:
+        pcheck_worker_nodes_info: "{{ check_worker_nodes_info }}"
+      when:
+        - check_worker_nodes_info.results is defined
+        - check_worker_nodes_info.results | length > 0 
+        - check_worker_nodes_info.results[0].stdout is defined or check_worker_nodes_info.results[0].stderr
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | machineset info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machineset --all-namespaces --no-headers | grep -v infra | grep worker | awk '{print $2 " -n " $1}' 
+      register: check_worker_machinesets_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 13 of n '
+      ansible.builtin.set_fact:
+        pcheck_worker_machinesets_info: "{{ check_worker_machinesets_info }}"
+      when:
+        - check_worker_machinesets_info.stdout is defined or check_worker_machinesets_info.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all worker machineset output '
+      ansible.builtin.debug:
+        msg: "The current machineset on the source cluster  are \n\n : {{ check_worker_machinesets_info.stdout_lines }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | cluster autoscaler info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get clusterautoscaler default  -ojsonpath='{.spec.resourceLimits}' | jq . 
+      ignore_errors: yes
+      register: check_cluster_autoscaler_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 14 of n '
+      ansible.builtin.set_fact:
+        pcheck_cluster_autoscaler_info: "{{ check_cluster_autoscaler_info }}"
+      when:
+        - check_cluster_autoscaler_info.stdout is defined or check_cluster_autoscaler_info.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print cluster autoscaler resource limit output '
+      ansible.builtin.debug:
+        msg: "The current cluster autoscaler resource limit on the source cluster is \n\n : {{ check_cluster_autoscaler_info.stdout_lines }}"
+        verbosity: 2
+      when:
+        - check_cluster_autoscaler_info is defined
+        - check_cluster_autoscaler_info.rc is defined
+        - check_cluster_autoscaler_info.rc == 0 
+        - check_cluster_autoscaler_info.stdout_lines is defined
+        - check_cluster_autoscaler_info.stdout_lines | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | machine autoscaler info'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machineautoscaler --all-namespaces -ojsonpath='{range .items[*]}{@.metadata}{@.spec}{@.status}' | jq .   
+      ignore_errors: yes
+      when:
+        - check_cluster_autoscaler_info is defined
+        - check_cluster_autoscaler_info.rc is defined
+        - check_cluster_autoscaler_info.rc == 0 
+        - check_cluster_autoscaler_info.stdout_lines is defined
+        - check_cluster_autoscaler_info.stdout_lines | length > 0 
+      register: check_machine_autoscaler_info
+
+    - name: '{{ ansible_name_module }} | set_fact | pcheck fact 15 of n '
+      ansible.builtin.set_fact:
+        pcheck_machine_autoscaler_info: "{{ check_machine_autoscaler_info }}"
+      when:
+        - check_machine_autoscaler_info.stdout is defined or check_machine_autoscaler_info.stderr
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print machine autoscaler resource limit output '
+      ansible.builtin.debug:
+        msg: "The current cluster autoscaler resource limit on the source cluster is \n\n : {{ check_cluster_autoscaler_info.stdout_lines }}"
+        verbosity: 2
+      when:
+        - check_machine_autoscaler_info is defined
+        - check_machine_autoscaler_info.rc is defined
+        - check_machine_autoscaler_info.rc == 0 
+        - check_machine_autoscaler_info.stdout_lines is defined
+        - check_machine_autoscaler_info.stdout_lines | length > 0 
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
