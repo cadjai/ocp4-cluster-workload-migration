@@ -1,20 +1,3 @@
-kind: PersistentVolumeClaim
-apiVersion: v1
-metadata:
-  name: oadp-resource-exclusion-files 
-  namespace: {{ oadp_backup_ns }} 
-  labels:
-    template: oadp-resource-exclusion-cronjob
-    app.kubernetes.io/instance: oadp-resource-exclusion
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: '1Gi'
-  storageClassName: 'gp3-csi'
-  volumeMode: Filesystem
----
 kind: CronJob
 apiVersion: batch/v1
 metadata:
@@ -108,7 +91,7 @@ spec:
                   mountPath: /projects/code/process-oadp-exclusion.yml
                   subPath: process-oadp-exclusion.yml
               terminationMessagePolicy: File
-              image: {{ oadp_resource_exclusion_cronjob_image | d('docker.artifactory.code.dodiis.mil/openshift4/devspaces/udi-rhel8-bastion:latest', true) }}
+              image: {{ oadp_resource_exclusion_cronjob_image | d('registry.redhat.io/devspaces/udi-rhel8-bastion:latest', true) }}
               command:
                 - /usr/bin/ansible-playbook
               args:
@@ -127,8 +110,12 @@ spec:
           serviceAccount: velero
           volumes:
             - name: oadp-res-exclusion-files
+{% if add_cronjob_pvc is defined and add_cronjob_pvc | bool %}
               persistentVolumeClaim:
                 claimName: oadp-resource-exclusion-files
+{% else %}
+              emptyDir: {}
+{% endif %}
             - name: oadp-res-exclusion-tasks
               configMap:
                 name: oadp-resource-exclusion-tasks-configmap

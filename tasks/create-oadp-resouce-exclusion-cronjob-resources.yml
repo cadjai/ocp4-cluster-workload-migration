@@ -90,6 +90,28 @@
        -n  {{ oadp_backup_ns }} 
   register: oadp_playbook_cm_created
 
+- name: '{{ ansible_name_module }} | Add OADP resource exclusion cronjob pvc'
+  when:
+    - add_cronjob_pvc is defined
+    - add_cronjob_pvc | bool 
+  block:
+    - name: '{{ ansible_name_module }} | template | Render  OADP resource exclusion cronjob pvc'
+      ansible.builtin.template:
+        src: "templates/oadp-resource-exclusion-cronjob-pvc.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-resource-exclusion-cronjob-pvc.yaml"
+        force: yes
+      register: oadp_res_exclusion_cronjob_pvc_copied
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP resource exclusion cronjob pvc'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ oadp_res_exclusion_cronjob_pvc_copied.dest }}
+      when:
+        - oadp_res_exclusion_cronjob_pvc_copied is defined
+        - oadp_res_exclusion_cronjob_pvc_copied.dest is defined
+        - oadp_res_exclusion_cronjob_pvc_copied.state is defined
+        - "'file' in oadp_res_exclusion_cronjob_pvc_copied.state"
+      register:  oadp_res_exclusion_cronjob_pvc_applied
+
 - name: '{{ ansible_name_module }} | template | Render  OADP resource exclusion cronjob'
   ansible.builtin.template:
     src: "templates/oadp-resource-exclusion-cronjob.yaml.j2"
@@ -98,7 +120,7 @@
   vars:
   register: oadp_res_exclusion_cronjob_copied
 
-- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP SC Change CM'
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP resource exclusion cronjob'
   ansible.builtin.command: >
     {{ openshift_cli }} apply -f {{ oadp_res_exclusion_cronjob_copied.dest }}
   when:
