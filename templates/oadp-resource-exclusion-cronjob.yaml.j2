@@ -1,0 +1,142 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: oadp-resource-exclusion-files 
+  namespace: {{ oadp_backup_ns }} 
+  labels:
+    template: oadp-resource-exclusion-cronjob
+    app.kubernetes.io/instance: oadp-resource-exclusion
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: '1Gi'
+  storageClassName: 'gp3-csi'
+  volumeMode: Filesystem
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: oadp-resource-exclusion
+  namespace: {{ oadp_backup_ns }} 
+  labels:
+    template: oadp-resource-exclusion-cronjob
+    app.kubernetes.io/instance: oadp-resource-exclusion
+spec:
+  schedule: {{ oadp_res_exclusion_cron_expression | d('25 23 * * *', true) }}
+  startingDeadlineSeconds: 1800
+  concurrencyPolicy: Forbid
+  suspend: false
+  jobTemplate:
+    metadata:
+    spec:
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+        spec:
+          nodeSelector:
+            node-role.kubernetes.io/worker: ''
+          restartPolicy: Never
+          schedulerName: default-scheduler
+          terminationGracePeriodSeconds: 30
+          securityContext: {}
+          containers:
+            - resources:
+                limits:
+                  cpu: 1000m
+                  memory: 2000Mi
+                requests:
+                  cpu: 200m
+                  memory: 400Mi
+              terminationMessagePath: /dev/termination-log
+              name: oadp-resource-exclusion
+              env:
+                - name: NSLIST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: nsList 
+                - name: OCP_CLI
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: ocpCli
+                - name: SKIP_API_LOGIN
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: skipApiLogin 
+                - name: OADP_EXCLUSION_ADD_LABEL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: oadpExclusionAddLabel
+                - name: LABEL_NON_RUNNING_PODS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: labelNonRunningPods 
+                - name: OADP_EXCLUSION_REMOVE_LABEL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: oadpExlusionRemoveLabel
+                - name: APPLY_OADP_EXCLUSION_LABEL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: applyOADPLabel
+                - name: REMOVE_OADP_EXCLUSION_LABEL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: removeOADPLabel
+                - name: STAGING_DIR
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ oadp_resource_excusion_config_cm_name }} 
+                      key: containerStagingDir
+              imagePullPolicy: IfNotPresent
+              volumeMounts:
+                - name: oadp-res-exclusion-files
+                  mountPath: /projects/files
+                - name: oadp-res-exclusion-tasks
+                  mountPath: /projects/code/oadp-exclusion-tasks.yml
+                  subPath: oadp-exclusion-tasks.yml
+                - name: oadp-res-exclusion-play
+                  mountPath: /projects/code/process-oadp-exclusion.yml
+                  subPath: process-oadp-exclusion.yml
+              terminationMessagePolicy: File
+              image: {{ oadp_resource_exclusion_cronjob_image | d('docker.artifactory.code.dodiis.mil/openshift4/devspaces/udi-rhel8-bastion:latest', true) }}
+              command:
+                - /usr/bin/ansible-playbook
+              args:
+                - '-i localhost'
+                - '-e openshift_cli=$(OCP_CLI)'
+                - '-e skip_api_login_logout=$(SKIP_API_LOGIN)'
+                - '-e namespace_list=$(NSLIST)'
+                - '-e oadp_exclusion_add_label=$(OADP_EXCLUSION_ADD_LABEL)'
+                - '-e label_non_running_pods=$(LABEL_NON_RUNNING_PODS)'
+                - '-e oadp_exclusion_remove_label=$(OADP_EXCLUSION_REMOVE_LABEL)'
+                - '-e apply_oadp_exclusion_label=$(APPLY_OADP_EXCLUSION_LABEL)'
+                - '-e remove_oadp_exclusion_label=$(REMOVE_OADP_EXCLUSION_LABEL)'
+                - '-e staging_dir=$(STAGING_DIR)'
+                - '-vvv'
+                - /projects/code/process-oadp-exclusion.yml
+          serviceAccount: velero
+          volumes:
+            - name: oadp-res-exclusion-files
+              persistentVolumeClaim:
+                claimName: oadp-resource-exclusion-files
+            - name: oadp-res-exclusion-tasks
+              configMap:
+                name: oadp-resource-exclusion-tasks-configmap
+            - name: oadp-res-exclusion-play
+              configMap:
+                name: oadp-resource-exclusion-playbook-configmap
+          dnsPolicy: ClusterFirst
+          tolerations:
+            - operator: Exists
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1

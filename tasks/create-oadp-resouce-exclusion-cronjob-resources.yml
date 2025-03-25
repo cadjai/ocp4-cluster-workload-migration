@@ -1,0 +1,110 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve OADP resource exclusion CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ oadp_resource_excusion_config_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_config_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete OADP resource exclusion CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ oadp_resource_excusion_config_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - oadp_config_cm_retrieved is defined
+    - oadp_config_cm_retrieved.rc is defined
+    - oadp_config_cm_retrieved.rc == 0 
+    - oadp_config_cm_retrieved.stdout is defined
+    - oadp_config_cm_retrieved.stdout != '' 
+  register: oadp_config_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create OADP resource exclusion CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ oadp_resource_excusion_config_cm_name }} \
+      --from-literal=ocpCli={{ ocp_cli_path_in_pod }} \
+      --from-literal=skipApiLogin={{ skip_api_login_logout }} \
+      --from-literal=oadpExclusionAddLabel={{ oadp_exclusion_add_label }} \
+      --from-literal=oadpExlusionRemoveLabel={{ oadp_exclusion_remove_label }} \
+      --from-literal=applyOADPLabel={{ apply_oadp_exclusion_label }} \
+      --from-literal=removeOADPLabel={{ remove_oadp_exclusion_label }} \
+      --from-literal=labelNonRunningPods={{ label_non_running_pods }} \
+      --from-literal=containerStagingDir={{ staging_dir_in_pod }} \
+      --from-literal=nsList="{{ namespace_list | to_nice_yaml | indent(4, true) }}" \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_config_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve OADP resource exclusion tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ oadp_resource_excusion_task_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_task_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete OADP resource exclusion tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ oadp_resource_excusion_task_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - oadp_task_cm_retrieved is defined
+    - oadp_task_cm_retrieved.rc is defined
+    - oadp_task_cm_retrieved.rc == 0 
+    - oadp_task_cm_retrieved.stdout is defined
+    - oadp_task_cm_retrieved.stdout != '' 
+  register: oadp_task_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create OADP resource exclusion task CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ oadp_resource_excusion_task_cm_name }} \
+      --from-file=oadp-exclusion-tasks.yml={{ oadp_exclusion_task_file }} \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_task_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve OADP resource exclusion playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ oadp_resource_excusion_playbook_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_playbook_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete OADP resource exclusion playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ oadp_resource_excusion_playbook_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - oadp_playbook_cm_retrieved is defined
+    - oadp_playbook_cm_retrieved.rc is defined
+    - oadp_playbook_cm_retrieved.rc == 0 
+    - oadp_playbook_cm_retrieved.stdout is defined
+    - oadp_playbook_cm_retrieved.stdout != '' 
+  register: oadp_playbook_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create OADP resource exclusion playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ oadp_resource_excusion_playbook_cm_name }} \
+      --from-file=process-oadp-exclusion.yml={{ oadp_exclusion_playbook_file }} \
+       -n  {{ oadp_backup_ns }} 
+  register: oadp_playbook_cm_created
+
+- name: '{{ ansible_name_module }} | template | Render  OADP resource exclusion cronjob'
+  ansible.builtin.template:
+    src: "templates/oadp-resource-exclusion-cronjob.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-resource-exclusion-cronjob.yaml"
+    force: yes
+  vars:
+  register: oadp_res_exclusion_cronjob_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP SC Change CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ oadp_res_exclusion_cronjob_copied.dest }}
+  when:
+    - oadp_res_exclusion_cronjob_copied is defined
+    - oadp_res_exclusion_cronjob_copied.dest is defined
+    - oadp_res_exclusion_cronjob_copied.state is defined
+    - "'file' in oadp_res_exclusion_cronjob_copied.state"
+  register:  oadp_res_exclusion_cronjob_applied
+

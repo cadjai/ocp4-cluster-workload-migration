@@ -1,0 +1,126 @@
+- name: ' Konductor | Provision UPI Infra | deploy-oadp-resource-exclusion-as-cronjob.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Deploy OADP Resource exclusion Cronjob "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_console_url is defined
+              - backup_src_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_token is defined
+              - backup_src_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            backup_src_cluster_console_port: '6443'
+          when:
+            - not backup_src_cluster_console_port is defined or backup_src_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | assert | the OADP exclusion toggle variable is defined 1 of 2'
+          ansible.builtin.assert:
+            that:
+              - apply_oadp_exclusion_label is defined 
+              - apply_oadp_exclusion_label | bool
+            msg: "The apply_oadp_exclusion_label or remove_oadp_exclusion_label bool is required to run this playbook" 
+          when:
+            - not remove_oadp_exclusion_label is defined or not remove_oadp_exclusion_label | bool
+
+        - name: '{{ ansible_name_module }} | assert | the OADP exclusion toggle variable is defined 2 of 2'
+          ansible.builtin.assert:
+            that:
+              - remove_oadp_exclusion_label is defined 
+              - remove_oadp_exclusion_label | bool
+            msg: "The apply_oadp_exclusion_label or remove_oadp_exclusion_label bool is required to run this playbook" 
+          when:
+            - not apply_oadp_exclusion_label is defined or not apply_oadp_exclusion_label | bool
+
+  tasks:
+    - name: '{{ ansible_name_module }} | set_fact |  oadp_resource_excusion_config_cm_name'
+      ansible.builtin.set_fact:
+        oadp_resource_excusion_config_cm_name: 'oadp-resource-exclusion-config-configmap'
+      when:
+        - not oadp_resource_excusion_config_cm_name is defined or oadp_resource_excusion_config_cm_name == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_resource_excusion_task_cm_name'
+      ansible.builtin.set_fact:
+        oadp_resource_excusion_task_cm_name: 'oadp-resource-exclusion-tasks-configmap'
+      when:
+        - not oadp_resource_excusion_task_cm_name is defined or oadp_resource_excusion_task_cm_name == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_resource_excusion_playbook_cm_name'
+      ansible.builtin.set_fact:
+        oadp_resource_excusion_playbook_cm_name: 'oadp-resource-exclusion-playbook-configmap'
+      when:
+        - not oadp_resource_excusion_playbook_cm_name is defined or oadp_resource_excusion_playbook_cm_name == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_exclusion_task_file'
+      ansible.builtin.set_fact:
+        oadp_exclusion_task_file: 'tasks/process-oadp-exclusion-on-source-cluster.yml'
+      when:
+        - not oadp_exclusion_task_file is defined or oadp_exclusion_task_file == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_exclusion_playbook_file'
+      ansible.builtin.set_fact:
+        oadp_exclusion_playbook_file: 'files/process-oadp-exclusion.yml'
+      when:
+        - not oadp_exclusion_playbook_file is defined or oadp_exclusion_playbook_file == ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  ocp_cli_path_in_pod'
+      ansible.builtin.set_fact:
+        ocp_cli_path_in_pod: '/usr/bin/oc'
+      when:
+        - not ocp_cli_path_in_pod is defined or ocp_cli_path_in_pod == ''
+
+    - name: '{{ ansible_name_module }} | set_fact |  skip_api_login_logout'
+      ansible.builtin.set_fact:
+        skip_api_login_logout: 'false'
+      when:
+        - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+    - name: '{{ ansible_name_module }} | set_fact |  apply_oadp_exclusion_label'
+      ansible.builtin.set_fact:
+        apply_oadp_exclusion_label: 'false'
+      when:
+        - not apply_oadp_exclusion_label is defined or not apply_oadp_exclusion_label | bool
+
+    - name: '{{ ansible_name_module }} | set_fact | remove_oadp_exclusion_label'
+      ansible.builtin.set_fact:
+        remove_oadp_exclusion_label: 'false'
+      when:
+        - not remove_oadp_exclusion_label is defined or not remove_oadp_exclusion_label | bool
+
+    - name: '{{ ansible_name_module }} | set_fact | label_non_running_pods'
+      ansible.builtin.set_fact:
+        label_non_running_pods: 'false'
+      when:
+        - not label_non_running_pods is defined or not label_non_running_pods | bool
+
+    - name: '{{ ansible_name_module }} | set_fact | staging_dir_in_pod'
+      ansible.builtin.set_fact:
+        staging_dir_in_pod: '/projects/files'
+      when:
+        - not staging_dir_in_pod is defined or staging_dir_in_pod == ''
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster OADP exclusion cronjob tasks'
+      ansible.builtin.import_tasks: tasks/create-oadp-resouce-exclusion-cronjob-resources.yml
+

@@ -1,0 +1,10 @@
+- name: ' Konductor | Provision UPI Infra | process-oadp-exclusion-on-source-cluster-pre-backup.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Process OADP exclusion for failing items pre Backup of Source Cluster "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster OADP exclusion tasks'
+      ansible.builtin.import_tasks: oadp-exclusion-tasks.yml
