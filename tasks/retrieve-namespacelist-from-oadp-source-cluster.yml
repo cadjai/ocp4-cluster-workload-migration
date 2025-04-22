@@ -1,0 +1,27 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ src_oadp_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ src_oadp_cluster_console_url }}:{{ src_oadp_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster ONS retrieval tasks'
+  ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespacelist in array format output '
+  ansible.builtin.debug:
+    var: namespace_list_yaml
+    verbosity: 2
+  when:
+    - namespace_list_yaml is defined
+    - namespace_list_yaml !=''
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ src_oadp_cluster_console_url }}:{{ src_oadp_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

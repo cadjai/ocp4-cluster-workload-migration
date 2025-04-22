@@ -7,185 +7,119 @@
   when:
     - not skip_api_login_logout is defined or not skip_api_login_logout | bool
 
+- name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster ONS retrieval tasks'
+  ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml
 
-- name: '{{ ansible_name_module }} | set namespace list if not provided'
-  block:
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get project --no-headers | awk '{print $1}'
-      register: namespaces_all_out
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | bound pvcs in namespace count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ item }} --no-headers | egrep -i "bound" | wc -l 
+  ignore_errors: 'true'
+  loop: "{{ namespace_list | default([], true) }}"
+  when:
+    - namespace_list is defined
+    - namespace_list | length > 0 
+  register: namespaces_bound_pvcs_count
 
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get project --no-headers | egrep -vi "{{ excluded_ns | join('|') }}"  | awk '{print $1}'
-      when:
-        - apply_ns_exlusion is defined
-        - apply_ns_exlusion | bool
-        - excluded_ns is defined
-        - excluded_ns | length > 0
-      register: namespaces_filtered_out
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace bound pvc count output '
+  ansible.builtin.debug:
+    msg: "The number of namespaces in bound pvc count is : {{ namespaces_bound_pvcs_count.results | length }}" 
+    verbosity: 2
+  when:
+    - namespaces_bound_pvcs_count is defined
+    - namespaces_bound_pvcs_count.results is defined
+    - namespaces_bound_pvcs_count.results | length > 0 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace list output '
-      ansible.builtin.debug:
-        var: namespaces_all_out
-        verbosity: 2
+- name: '{{ ansible_name_module }} | set_fact | unset amespace_list_targeted facts'
+  ansible.builtin.set_fact:
+    namespace_list_targeted: 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace count output '
-      ansible.builtin.debug:
-        msg: "The number of all namesapces is : {{ namespaces_all_out.stdout_lines | length }}"
-        verbosity: 2
+- name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
+  ansible.builtin.set_fact:
+    namespace_list_targeted: "{{ namespace_list_targeted | default([], true) + [item.item] }}"
+  loop: "{{ namespaces_bound_pvcs_count.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - namespaces_bound_pvcs_count is defined
+    - namespaces_bound_pvcs_count.results is defined
+    - namespaces_bound_pvcs_count.results | length > 0 
+    - item.item is defined
+    - item.stdout is defined
+    - item.stdout | int <= 26 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace list output '
-      ansible.builtin.debug:
-        var: namespaces_filtered_out
-        verbosity: 2
+- name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted unique'
+  ansible.builtin.set_fact:
+    namespace_list_targeted: "{{ namespace_list_targeted | unique }}"
+  when:
+    - namespace_list_targeted is defined
+    - namespace_list_targeted | length > 0 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace count output '
-      ansible.builtin.debug:
-        msg: " The number of filtered namesapces is : {{ namespaces_filtered_out.stdout_lines | length }}"
-        verbosity: 2
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+  ansible.builtin.debug:
+    msg: "namespacelist count is:  {{ namespace_list | length }}" 
+    verbosity: 2
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
-      ansible.builtin.debug:
-        var: ansible_facts['namespace_list'] 
-        verbosity: 2
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+  ansible.builtin.debug:
+    msg: "target namespacelist count is:  {{ namespace_list_targeted | length }}" 
+    verbosity: 2
 
-    - name: '{{ ansible_name_module }} | set_fact | unset namespacelist '
-      ansible.builtin.set_fact:
-        namespace_list: 
+- name: '{{ ansible_name_module }} | set_fact | unset namespace_list_manual fact'
+  ansible.builtin.set_fact:
+    namespace_list_manual: 
 
-    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
-      ansible.builtin.set_fact:
-        namespace_list: "{{ namespace_list | default([], true) + [ item ] }}"
-      loop: "{{ namespaces_filtered_out.stdout_lines }}"
-      when:
-        - namespaces_filtered_out is defined
-        - namespaces_filtered_out.stdout_lines is defined
-        - namespaces_filtered_out.stdout_lines | length > 0 
-        - item is defined
-        - item != "" 
+- name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
+  ansible.builtin.set_fact:
+    namespace_list_manual: "{{ namespace_list_manual | default([], true) + [item.item] }}"
+  loop: "{{ namespaces_bound_pvcs_count.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - namespaces_bound_pvcs_count is defined
+    - namespaces_bound_pvcs_count.results is defined
+    - namespaces_bound_pvcs_count.results | length > 0 
+    - item.item is defined
+    - item.stdout is defined
+    - item.stdout | int > 26 
 
-    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
-      ansible.builtin.set_fact:
-        namespace_list: "{{ namespace_list | default([], true) + [ item ] }}"
-      loop: "{{ namespaces_all_out.stdout_lines }}"
-      when:
-        - not namespaces_filtered_out is defined
-        - namespaces_all_out.stdout_lines is defined
-        - namespaces_all_out.stdout_lines | length > 0 
-        - item is defined
-        - item != "" 
+- name: '{{ ansible_name_module }} | set_fact | namespace_list_manual unique'
+  ansible.builtin.set_fact:
+    namespace_list_manual: "{{ namespace_list_manual | unique }}"
+  when:
+    - namespace_list_manual is defined
+    - namespace_list_manual | length > 0 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
-      ansible.builtin.debug:
-        var: namespace_list 
-        verbosity: 2
-      when:
-        - namespace_list is defined
-        - namespace_list | length > 0 
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of manual namespace in list output '
+  ansible.builtin.debug:
+    msg: "manual namespacelist count is:  {{ namespace_list_manual | length }}" 
+    verbosity: 2
+  when:
+    - namespace_list_manual is defined
+    - namespace_list_manual | length > 0 
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace in list count output '
-      ansible.builtin.debug:
-        msg: "The number of namespaces is : {{ namespace_list | length }}" 
-        verbosity: 2
-      when:
-        - namespace_list is defined
-        - namespace_list | length > 0 
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print manual namespace list output '
+  ansible.builtin.debug:
+    var: namespace_list_manual 
+    verbosity: 2
+  when:
+    - namespace_list_manual is defined
+    - namespace_list_manual | length > 0 
 
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | bound pvcs in namespace count '
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get pvc -n {{ item }} --no-headers | egrep -i "bound" | wc -l 
-      ignore_errors: 'true'
-      loop: "{{ namespace_list | default([], true) }}"
-      when:
-        - namespace_list is defined
-        - namespace_list | length > 0 
-      register: namespaces_bound_pvcs_count
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespacelist output '
+  ansible.builtin.debug:
+    var: namespace_list
+    verbosity: 2
+  when:
+    - namespace_list is defined
+    - namespace_list !=''
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace bound pvc count output '
-      ansible.builtin.debug:
-        msg: "The number of namespaces in bound pvc count is : {{ namespaces_bound_pvcs_count.results | length }}" 
-        verbosity: 2
-      when:
-        - namespaces_bound_pvcs_count is defined
-        - namespaces_bound_pvcs_count.results is defined
-        - namespaces_bound_pvcs_count.results | length > 0 
-
-    - name: '{{ ansible_name_module }} | set_fact | unset amespace_list_targeted facts'
-      ansible.builtin.set_fact:
-        namespace_list_targeted: 
-
-    - name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
-      ansible.builtin.set_fact:
-        namespace_list_targeted: "{{ namespace_list_targeted | default([], true) + [item.item] }}"
-      loop: "{{ namespaces_bound_pvcs_count.results }}"
-      loop_control:
-        index_var: key_cnt
-      when:
-        - namespaces_bound_pvcs_count is defined
-        - namespaces_bound_pvcs_count.results is defined
-        - namespaces_bound_pvcs_count.results | length > 0 
-        - item.item is defined
-        - item.stdout is defined
-        - item.stdout | int <= 26 
-
-    - name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted unique'
-      ansible.builtin.set_fact:
-        namespace_list_targeted: "{{ namespace_list_targeted | unique }}"
-      when:
-        - namespace_list_targeted is defined
-        - namespace_list_targeted | length > 0 
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
-      ansible.builtin.debug:
-        msg: "namespacelist count is:  {{ namespace_list | length }}" 
-        verbosity: 2
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
-      ansible.builtin.debug:
-        msg: "target namespacelist count is:  {{ namespace_list_targeted | length }}" 
-        verbosity: 2
-
-    - name: '{{ ansible_name_module }} | set_fact | unset namespace_list_manual fact'
-      ansible.builtin.set_fact:
-        namespace_list_manual: 
-
-    - name: '{{ ansible_name_module }} | set_fact | namespace_list_targeted '
-      ansible.builtin.set_fact:
-        namespace_list_manual: "{{ namespace_list_manual | default([], true) + [item.item] }}"
-      loop: "{{ namespaces_bound_pvcs_count.results }}"
-      loop_control:
-        index_var: key_cnt
-      when:
-        - namespaces_bound_pvcs_count is defined
-        - namespaces_bound_pvcs_count.results is defined
-        - namespaces_bound_pvcs_count.results | length > 0 
-        - item.item is defined
-        - item.stdout is defined
-        - item.stdout | int > 26 
-
-    - name: '{{ ansible_name_module }} | set_fact | namespace_list_manual unique'
-      ansible.builtin.set_fact:
-        namespace_list_manual: "{{ namespace_list_manual | unique }}"
-      when:
-        - namespace_list_manual is defined
-        - namespace_list_manual | length > 0 
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of manual namespace in list output '
-      ansible.builtin.debug:
-        msg: "manual namespacelist count is:  {{ namespace_list_manual | length }}" 
-        verbosity: 2
-      when:
-        - namespace_list_manual is defined
-        - namespace_list_manual | length > 0 
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print manual namespace list output '
-      ansible.builtin.debug:
-        var: namespace_list_manual 
-        verbosity: 2
-      when:
-        - namespace_list_manual is defined
-        - namespace_list_manual | length > 0 
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+  ansible.builtin.debug:
+    var: namespace_list_targeted 
+    verbosity: 2
+  when:
+    - namespace_list_targeted is defined
+    - namespace_list_targeted !=''
 
 - name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
   ansible.builtin.command: >

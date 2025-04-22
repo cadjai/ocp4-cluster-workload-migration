@@ -65,17 +65,12 @@
           --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
       register: login_out
 
-
   tasks:
-    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Info retrievl additional tasks'
-      ansible.builtin.import_tasks: tasks/retrieve-satoken-from-mtc-source-cluster.yml
-      when:
-        - retrieve_satoken is defined
-        - retrieve_satoken | bool
-
     - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace List retrievl additional tasks'
-      ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-mtc-source-cluster.yml
+      ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml
       when:
         - retrieve_nslist is defined
         - retrieve_nslist | bool
+
+
 

@@ -1,0 +1,97 @@
+---
+- name: '{{ ansible_name_module }} | set namespace list if not provided'
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | awk '{print $1}'
+      register: namespaces_all_out
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | namespace list '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get project --no-headers | egrep -vi "{{ excluded_ns | join('|') }}"  | awk '{print $1}'
+      when:
+        - apply_ns_exlusion is defined
+        - apply_ns_exlusion | bool
+        - excluded_ns is defined
+        - excluded_ns | length > 0
+      register: namespaces_filtered_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_all_out
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace count output '
+      ansible.builtin.debug:
+        msg: "The number of all namesapces is : {{ namespaces_all_out.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace list output '
+      ansible.builtin.debug:
+        var: namespaces_filtered_out
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered namespace count output '
+      ansible.builtin.debug:
+        msg: " The number of filtered namesapces is : {{ namespaces_filtered_out.stdout_lines | length }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
+      ansible.builtin.debug:
+        var: ansible_facts['namespace_list'] 
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | unset namespacelist '
+      ansible.builtin.set_fact:
+        namespace_list: 
+
+    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+      ansible.builtin.set_fact:
+        namespace_list: "{{ namespace_list | default([], true) + [ item ] }}"
+      loop: "{{ namespaces_filtered_out.stdout_lines }}"
+      when:
+        - namespaces_filtered_out is defined
+        - namespaces_filtered_out.stdout_lines is defined
+        - namespaces_filtered_out.stdout_lines | length > 0 
+        - item is defined
+        - item != "" 
+
+    - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+      ansible.builtin.set_fact:
+        namespace_list: "{{ namespace_list | default([], true) + [ item ] }}"
+      loop: "{{ namespaces_all_out.stdout_lines }}"
+      when:
+        - not namespaces_filtered_out is defined
+        - namespaces_all_out.stdout_lines is defined
+        - namespaces_all_out.stdout_lines | length > 0 
+        - item is defined
+        - item != "" 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace list output '
+      ansible.builtin.debug:
+        var: namespace_list 
+        verbosity: 2
+      when:
+        - namespace_list is defined
+        - namespace_list | length > 0 
+
+    - name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+      ansible.builtin.set_fact:
+        namespace_list_yaml: '[{{ namespace_list  | map("to_json") | join(", ") }}]' 
+      when:
+        - namespace_list is defined
+        - namespace_list | length > 0 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace in list count output '
+      ansible.builtin.debug:
+        msg: "The number of namespaces is : {{ namespace_list | length }}" 
+        verbosity: 2
+      when:
+        - namespace_list is defined
+        - namespace_list | length > 0 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print each namespace in list output '
+      ansible.builtin.debug:
+        msg: "namespacelist count is:  {{ namespace_list | length }}" 
+        verbosity: 2
+
