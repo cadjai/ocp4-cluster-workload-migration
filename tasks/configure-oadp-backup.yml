@@ -29,7 +29,8 @@
         - oadp_ns_out.stdout != ''
       register: oadp_controller_out
 
-    - assert:
+    - name: '{{ ansible_name_module }} | Assert that the OADP controller is installed '
+      assert:
         that:
           - oadp_ip_out.rc is defined and oadp_ip_out.rc == 0
           - oadp_ip_out.stdout is defined and oadp_ip_out.stdout != ''
@@ -177,57 +178,55 @@
     - add_backup is defined 
     - add_backup | bool 
   block:
-    - name: '{{ ansible_name_module }} | template | Render oadp-schedule CR'
-      ansible.builtin.template:
-        src: "templates/oadp-schedule-cr.yaml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-schedule-cr.yaml"
-        force: yes
-      when:
-        - add_oadp_schedule is defined
-        - add_oadp_schedule | bool 
-      register: oadp_schedule_cr_copied
-
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-schedule CR '
-      ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-schedule-cr.yaml -n {{ oadp_backup_ns }}
-      when:
-        - add_oadp_schedule is defined
-        - add_oadp_schedule | bool 
-        - oadp_storage_backup_location_out.stdout is defined
-        - oadp_storage_backup_location_out.stdout != ''
-      register: oadp_schedule_cr_applied
-
-    - name: '{{ ansible_name_module }} | template | Render oadp-backup CR'
-      ansible.builtin.template:
-        src: "templates/oadp-backup-cr.yaml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-backup-cr.yaml"
-        force: yes
-      register: oadp_backup_cr_copied
-
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-backup CR '
-      ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-backup-cr.yaml -n {{ oadp_backup_ns }}
-      when:
-        - oadp_storage_backup_location_out.stdout is defined
-        - oadp_storage_backup_location_out.stdout != ''
-      register: oadp_backup_cr_applied
-
-    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
-      ansible.builtin.wait_for:
-        timeout: 60
-      delegate_to: localhost
-
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get |  backup CR'
+    - name: '{{ ansible_name_module }} | Retrieve velero info'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get backup -n {{ oadp_backup_ns }} --no-headers | awk '{print $1}' | grep {{ backup_name }}
-      register: backup_cr
+        {{ openshift_cli }} get pod --no-headers -n {{ oadp_backup_ns }} | grep velero | awk '{print $1}'
+      register: velero_po_retrieved
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
-      ansible.builtin.command: >
-        {{ openshift_cli }} get backup "{{ backup_cr.stdout }}" -n {{ oadp_backup_ns }} -o jsonpath='{.status.phase}'
+    - name: '{{ ansible_name_module }} | Retrieve velero pod phase '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ oadp_backup_ns }}  -ojsonpath='{.status.phase}{"\n"}'
       when:
-        - backup_cr.rc is defined
-        - backup_cr.rc == 0
-        - backup_cr.stdout is defined
-        - backup_cr.stdout != ''
-      register: backup_cr_status
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != ''
+      register: velero_po_phase_retrieved
+
+    - name: '{{ ansible_name_module }} | Assert that the velero pod is running'
+      assert:
+        that:
+          - velero_po_phase_retrieved.rc is defined and oadp_ip_out.rc == 0
+          - velero_po_phase_retrieved.stdout is defined and oadp_ip_out.stdout != ''
+          - "'Running' in velero_po_phase_retrieved.stdout" 
+        msg: " the velero pod must be running before running this playbook"
+
+        ###  Porcess backup per namespace'
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+      ansible.builtin.include_tasks: process-backup.yml 
+      loop: "{{ namespaces_to_backup }}"
+      vars:
+        backup_name: "{{ default_backup_name }}-{{ item }}"
+        namespace_list: '{{ [item] }}'
+        add_oadp_schedule: 'true'
+        oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+      when:
+        - process_backup_per_namespace is defined
+        - process_backup_per_namespace | bool
+      register: all_backup_processed
+
+        ### Porcess backup for all namespaces '
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+      ansible.builtin.include_tasks: process-backup.yml 
+      vars:
+        backup_name: "{{ default_backup_name }}"
+        namespace_list: "{{ namespaces_to_backup }}"
+        add_oadp_schedule: 'true'
+        oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+      when:
+        - not process_backup_per_namespace is defined or not process_backup_per_namespace | bool
+      register: backup_bundle_processed
+

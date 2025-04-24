@@ -1,0 +1,44 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed", "InProgress"]) | not ) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
+  when:
+    - not oadp_backup_list is defined or oadp_backup_list | length == 0 or oadp_backup_list == ''
+  register: oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    msg: "{{ oadp_backup_out.stdout | from_json }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+  ansible.builtin.set_fact:
+    oadp_backup_list: '{{ oadp_backup_out.stdout | from_json }}'
+  when:
+    - oadp_backup_out is defined
+    - oadp_backup_out.rc is defined
+    - oadp_backup_out.rc == 0 
+    - oadp_backup_out.stdout_lines is defined
+    - oadp_backup_out.stdout_lines  | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    var: oadp_backup_list 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backupstoragelocations -n {{ oadp_backup_ns }} --no-headers | awk '{print $1}'
+  register: oadp_storage_backup_location_out
+
+- name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+  ansible.builtin.include_tasks: process-backup-schedule.yml 
+  loop: "{{ oadp_backup_list }}"
+  vars:
+    backup_name: "{{ item.name }}"
+    namespace_list: '{{ item.namespace_list }}'
+    oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+    oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+  register: all_schedule_cr_processed
+
+

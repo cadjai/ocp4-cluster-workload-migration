@@ -24,6 +24,7 @@ oadp_velero_pod_cpu_request: '2'
 oadp_velero_pod_mem_request: '4Gi'
 oadp_velero_item_op_timeout: '4h'
 oadp_dpa_timeout: '5h'
+oadp_dpa_ttl: '168h0m0s'
 oadp_bucket_access_key: ''
 oadp_bucket_access_secret: ''
 oadp_s3_bucket: ''
@@ -31,13 +32,14 @@ oadp_bucket_region: 'us-east-1'
 oadp_backup_prefix: ''
 oadp_bucket_secret_name: 'cloud-credentials'
 add_backup: 'true'
-backup_name: ''
+default_backup_name: ''
 cluster_name: ''
 oadp_s3url: ''   ## api URL without port
 backup_bucket_namespace: ''
 backup_bucket_name: '{{ oadp_s3_bucket }}'
 oadp_cron_schedule_expression: '30 3 * * *'
-namespace_list: []
+process_backup_per_namespace: 'true'
+namespaces_to_backup: []
 apply_ns_exlusion: 'true'
 excluded_ns:
   - "*-backup*"
@@ -95,9 +97,17 @@ excluded_resources_list:
   - ingresscontrollers
   - operatorconditions
   - nodes
+  - machineconfigs.machineconfiguration.openshift.io
+  - configurationpolicies.policy.open-cluster-management.io
 apply_oadp_exclusion_label: 'true'
+apply_oadp_exclusion_bsl_label: 'false'
+remove_oadp_exclusion_label: 'false'
+remove_oadp_exclusion_bsl_label: 'false'
 oadp_exclusion_add_label: 'velero.io/exclude-from-backup=true'
+oadp_exclusion_add_bsl_label: 'app.kubernetes.io/component=bsl'
 oadp_exclusion_remove_label: 'velero.io/exclude-from-backup-'
+oadp_exclusion_remove_bsl_label: 'app.kubernetes.io/component-'
+oadp_bsl_to_exclude_list: [] ### list of BSL to label or remove label for in the format of BSL name -n BSL namespace
 restore_name: ''
 oadp_restore_ns: ''
 add_odf_ca_cert: 'false'
@@ -106,3 +116,4 @@ add_restore: 'true'
 add_oadp_schedule: 'false'
 oadp_restore_cs_name: 'gp3-csi'
 label_non_running_pods: 'true'
+oadp_exclusion_special_objects_list: [] ### list of additional objects to exclude in the format of object name and namespace (e.g. pod test -n test-ns)

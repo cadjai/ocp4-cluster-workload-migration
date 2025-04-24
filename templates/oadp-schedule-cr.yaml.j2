@@ -14,7 +14,7 @@ spec:
     csiSnapshotTimeout: {{ bkp_csi_snapshot_timeout | default('5h', true) }}
     defaultVolumesToRestic: true
     snapshotMoveData: true
-    ttl: 720h0m0s
+    ttl: {{ oadp_dpa_backup_ttl | default('720h0m0s', true) }}
     defaultVolumesToFsBackup: false
     excludedResources:
       {{ excluded_resources_list | to_nice_yaml | indent(6, false) }}

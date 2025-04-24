@@ -1,0 +1,12 @@
+---
+- name: '{{ ansible_name_module }} | import_tasks | Import additional backup schedule CR processing tasks'
+  ansible.builtin.include_tasks: process-backup-schedule.yml 
+  when:
+    - add_oadp_schedule is defined
+    - add_oadp_schedule | bool 
+  register: oadp_schedule_cr_copied
+
+- name: '{{ ansible_name_module }} | import_tasks | Import additional backup CR processing tasks'
+  ansible.builtin.include_tasks: process-backup-cr.yml 
+  register: oadp_schedule_cr_copied
+

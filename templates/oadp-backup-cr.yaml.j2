@@ -12,4 +12,4 @@ spec:
   includeClusterResources: true
   defaultVolumesToRestic: true
   storageLocation: {{ oadp_storage_backup_location }} 
-  ttl: 720h0m0s
+  ttl: {{ oadp_dpa_backup_ttl | default('720h0m0s', true) }}

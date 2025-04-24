@@ -75,6 +75,13 @@
         - namespace_list is defined
         - namespace_list | length > 0 
 
+    - name: '{{ ansible_name_module }} | set_fact | set namespaces_to_backup in array format'
+      ansible.builtin.set_fact:
+        namespaces_to_backup: '{{ namespace_list  }' 
+      when:
+        - namespace_list is defined
+        - namespace_list | length > 0 
+
     - name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
       ansible.builtin.set_fact:
         namespace_list_yaml: '[{{ namespace_list  | map("to_json") | join(", ") }}]' 

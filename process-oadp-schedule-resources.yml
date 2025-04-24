@@ -1,0 +1,64 @@
+- name: ' Konductor | Provision UPI Infra | process-oadp-schedule-resources.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Process OADP schedule CRs fro existing backup without one"
+    ansible_name_module: " Post Cluster Installation | Configure Cluster application backup Service | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | ensure required variables are provided '
+      assert:
+        that:
+          - oadp_backup_ns is defined and oadp_backup_ns != ''
+        msg: "the oadp_backup_ns must be set to a valid namespace name where the backups are located "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
+      register: cluster_infra_name
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
+      ansible.builtin.set_fact:
+        cluster_name: "{{ cluster_infra_name.stdout }}"
+      when:
+        - cluster_infra_name.stdout is defined
+        - cluster_infra_name.stdout != ''
+
+    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get clusterversion version -o jsonpath='{.spec.clusterID}{"\n"}'
+      register: cluster_infra_id
+
+    - name: '{{ ansible_name_module }} | set_fact | cluster_id '
+      ansible.builtin.set_fact:
+        cluster_id: "{{ cluster_infra_id.stdout }}"
+      when:
+        - cluster_infra_id.stdout is defined
+        - cluster_infra_id.stdout != ''
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP schedule CR processing tasks'
+      ansible.builtin.import_tasks: tasks/process-oadp-backup-schedules.yml
+
