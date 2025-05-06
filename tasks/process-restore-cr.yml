@@ -1,0 +1,40 @@
+---
+- name: '{{ ansible_name_module }} | template | Render oadp-restore CR'
+  ansible.builtin.template:
+    src: "templates/oadp-restore-cr.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-cr.yaml"
+    force: yes
+  register: oadp_restore_cr_copied
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-restore CR '
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ oadp_restore_cr_copied.dest }} -n {{ oadp_restore_ns }}
+  when:
+    - oadp_storage_backup_location is defined
+    - oadp_storage_backup_location != ''
+    - oadp_restore_cr_copied is defined
+    - oadp_restore_cr_copied.dest is defined
+    - oadp_restore_cr_copied.state is defined
+    - "'file' in oadp_restore_cr_copied.state"
+  register: oadp_restore_cr_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 30
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | restore CR'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}' | grep {{ restore_name }}
+  register: restore_cr
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
+  ansible.builtin.command: >
+    {{ openshift_cli }} get restore "{{ restore_cr.stdout }}" -n {{ oadp_restore_ns }} -o jsonpath='{.status.phase}'
+  when:
+    - restore_cr.rc is defined
+    - restore_cr.rc == 0
+    - restore_cr.stdout is defined
+    - restore_cr.stdout != ''
+  register: restore_cr_status
+

@@ -16,7 +16,7 @@
 
 - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
   ansible.builtin.wait_for:
-    timeout: 60
+    timeout: 30
   delegate_to: localhost
 
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get |  backup CR'

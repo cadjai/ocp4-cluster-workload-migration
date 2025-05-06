@@ -1,0 +1,20 @@
+---
+- name: '{{ ansible_name_module }} | template | Render oadp-schedule CR'
+  ansible.builtin.template:
+    src: "templates/oadp-schedule-cr.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-schedule-cr.yaml"
+    force: yes
+  register: oadp_schedule_cr_copied
+
+- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-schedule CR '
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ oadp_schedule_cr_copied.dest }} -n {{ oadp_backup_ns }}
+  when:
+    - oadp_storage_backup_location is defined
+    - oadp_storage_backup_location != ''
+    - oadp_schedule_cr_copied is defined
+    - oadp_schedule_cr_copied.dest is defined
+    - oadp_schedule_cr_copied.state is defined
+    - "'file' in oadp_schedule_cr_copied.state"
+  register: oadp_schedule_cr_applied
+
