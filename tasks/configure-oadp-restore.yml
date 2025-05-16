@@ -122,11 +122,12 @@
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-dataprotectionapplication-cr.yaml"
         force: yes
       vars:
-        oadp_backup_ns: '{{ oadp_restore_ns }}'
+        oadp_restore_ns: '{{ oadp_restore_ns }}'
         s3url: '{{ oadp_s3url }}'
         bucket_name: '{{ oadp_s3_bucket }}'
-        backup_prefix: '{{ oadp_restore_prefix }}'
+        backup_prefix: '{{ oadp_backup_prefix }}'
         bucket_region: '{{ oadp_bucket_region }}'
+        backup_name: '{{ default_backup_name }}'
       register: oadp_dpa_manifest_copied
 
     - name: '{{ ansible_name_module }} | set_fact |  oadp_bucket_secret_file '
@@ -197,68 +198,109 @@
 
 - name: '{{ ansible_name_module }} | Configure OADP Restore  '
   when:
+    - not backups_to_restore is defined or backups_to_restore | length == 0 or backups_to_restore == ''
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s
+      register: completed_oadp_backup_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+      ansible.builtin.debug:
+        msg: "{{ completed_oadp_backup_out.stdout | from_json }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+      ansible.builtin.set_fact:
+        completed_oadp_backup_list: '{{ completed_oadp_backup_out.stdout | from_json }}'
+      when:
+        - completed_oadp_backup_out is defined
+        - completed_oadp_backup_out.rc is defined
+        - completed_oadp_backup_out.rc == 0
+        - completed_oadp_backup_out.stdout is defined
+        - completed_oadp_backup_out.stdout != '' 
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+      ansible.builtin.debug:
+        var: completed_oadp_backup_list 
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name' 
+      register: backups_to_restore_raw_out
+
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+      ansible.builtin.set_fact:
+        backups_to_restore: '{{ backups_to_restore_raw_out.stdout_lines | list }}'
+      when:
+        - backups_to_restore_raw_out is defined
+        - backups_to_restore_raw_out.rc is defined
+        - backups_to_restore_raw_out.rc == 0
+        - backups_to_restore_raw_out.stdout_lines is defined
+        - backups_to_restore_raw_out.stdout | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of backups to restore output '
+  ansible.builtin.debug:
+    var: backups_to_restore 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | Configure OADP Restore  '
+  when:
     - add_restore is defined 
     - add_restore | bool 
   block:
-    - name: '{{ ansible_name_module }} | template | Render oadp-schedule CR'
-      ansible.builtin.template:
-        src: "templates/oadp-schedule-cr.yaml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-schedule-cr.yaml"
-        force: yes
-      when:
-        - add_oadp_schedule is defined
-        - add_oadp_schedule | bool 
-      register: oadp_schedule_cr_copied
-
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-schedule CR '
-      ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ oadp_schedule_cr_copied.dest }} -n {{ oadp_restore_ns }}
-      when:
-        - add_oadp_schedule is defined
-        - add_oadp_schedule | bool 
-        - oadp_storage_restore_location_out.stdout is defined
-        - oadp_storage_restore_location_out.stdout !='
-        - oadp_schedule_cr_copied is defined
-        - oadp_schedule_cr_copied.dest is defined
-        - oadp_schedule_cr_copied.state is defined
-        - "'file' in oadp_schedule_cr_copied.state"
-      register: oadp_schedule_cr_applied
-
-    - name: '{{ ansible_name_module }} | template | Render oadp-restore CR'
-      ansible.builtin.template:
-        src: "templates/oadp-restore-cr.yaml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-cr.yaml"
-        force: yes
-      register: oadp_restore_cr_copied
-
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-restore CR '
-      ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ oadp_restore_cr_copied.dest }} -n {{ oadp_restore_ns }}
-      when:
-        - oadp_storage_restore_location_out.stdout is defined
-        - oadp_storage_restore_location_out.stdout != ''
-        - oadp_restore_cr_copied is defined
-        - oadp_restore_cr_copied.dest is defined
-        - oadp_restore_cr_copied.state is defined
-        - "'file' in oadp_restore_cr_copied.state"
-      register: oadp_restore_cr_applied
-
-    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
-      ansible.builtin.wait_for:
-        timeout: 60
-      delegate_to: localhost
-
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | restore CR'
+    - name: '{{ ansible_name_module }} | Retrieve velero info'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get restore -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}' | grep {{ restore_name }}
-      register: restore_cr
+        {{ openshift_cli }} get pod --no-headers -n {{ oadp_restore_ns }} | grep velero | awk '{print $1}'
+      register: velero_po_retrieved
 
-    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
-      ansible.builtin.command: >
-        {{ openshift_cli }} get restore "{{ restore_cr.stdout }}" -n {{ oadp_restore_ns }} -o jsonpath='{.status.phase}'
+    - name: '{{ ansible_name_module }} | Retrieve velero pod phase '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ oadp_restore_ns }}  -ojsonpath='{.status.phase}{"\n"}'
       when:
-        - restore_cr.rc is defined
-        - restore_cr.rc == 0
-        - restore_cr.stdout is defined
-        - restore_cr.stdout != ''
-      register: restore_cr_status
+        - velero_po_retrieved is defined
+        - velero_po_retrieved.rc is defined
+        - velero_po_retrieved.rc == 0
+        - velero_po_retrieved.stdout is defined
+        - velero_po_retrieved.stdout != ''
+      register: velero_po_phase_retrieved
+
+    - name: '{{ ansible_name_module }} | Assert that the velero pod is running'
+      assert:
+        that:
+          - velero_po_phase_retrieved.rc is defined and oadp_ip_out.rc == 0
+          - velero_po_phase_retrieved.stdout is defined and oadp_ip_out.stdout != ''
+          - "'Running' in velero_po_phase_retrieved.stdout"
+        msg: " the velero pod must be running before running this playbook"
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backupstoragelocations -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
+      register: oadp_storage_backup_location_out
+
+         ###  Porcess restore per namespace'
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional restore processing tasks'
+      ansible.builtin.include_tasks: process-restore.yml
+      loop: "{{ backups_to_restore }}"
+      vars:
+        backup_name: "{{ item }}"
+        add_oadp_schedule: 'false'
+        restore_name: "{{ item }}-restore"
+        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+      when:
+        - process_backup_per_namespace is defined
+        - process_backup_per_namespace | bool
+      register: all_restore_processed
+
+        ### Porcess restore for all namespaces '
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional restore processing tasks'
+      ansible.builtin.include_tasks: process-restore.yml
+      vars:
+        backup_name: "{{ default_backup_name }}"
+        add_oadp_schedule: 'false'
+        restore_name: "{{ default_backup_name }}-restore"
+        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+      when:
+        - not process_backup_per_namespace is defined or not process_backup_per_namespace | bool
+      register: restore_bundle_processed
