@@ -202,15 +202,21 @@
           - "'Running' in velero_po_phase_retrieved.stdout" 
         msg: " the velero pod must be running before running this playbook"
 
+    - name: '{{ ansible_name_module }} | set_fact | set backup_start_time'
+      ansible.builtin.set_fact:
+        backup_start_time: '{{ ansible_date_time.minute | int }}'
+
         ###  Porcess backup per namespace'
     - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
       ansible.builtin.include_tasks: process-backup.yml 
       loop: "{{ namespaces_to_backup }}"
+      loop_control:
+        index_var: key_cnt
       vars:
         backup_name: "{{ default_backup_name }}-{{ item }}"
         namespace_list: '{{ [item] }}'
-        add_oadp_schedule: 'true'
-        oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+        add_oadp_schedule: '{{ use_oadp_schedule_cr if use_oadp_schedule_cr is defined and use_oadp_schedule_cr | bool else "false" }}'
+        oadp_cron_schedule_expression: '{{ backup_start_time + (key_cnt + 1)*5 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
         oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
       when:
         - process_backup_per_namespace is defined
@@ -223,8 +229,8 @@
       vars:
         backup_name: "{{ default_backup_name }}"
         namespace_list: "{{ namespaces_to_backup }}"
-        add_oadp_schedule: 'true'
-        oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+        add_oadp_schedule: '{{ use_oadp_schedule_cr if use_oadp_schedule_cr is defined and use_oadp_schedule_cr | bool else "false" }}'
+        oadp_cron_schedule_expression: '{{ backup_start_time + 5 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
         oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
       when:
         - not process_backup_per_namespace is defined or not process_backup_per_namespace | bool

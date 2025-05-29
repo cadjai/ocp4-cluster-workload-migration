@@ -31,13 +31,19 @@
     {{ openshift_cli }} get backupstoragelocations -n {{ oadp_backup_ns }} --no-headers | awk '{print $1}'
   register: oadp_storage_backup_location_out
 
+- name: '{{ ansible_name_module }} | set_fact | set backup_start_time'
+  ansible.builtin.set_fact:
+    backup_start_time: '{{ ansible_date_time.minute | int }}'
+
 - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
   ansible.builtin.include_tasks: process-backup-schedule.yml 
   loop: "{{ oadp_backup_list }}"
+  loop_control:
+    index_var: key_cnt
   vars:
     backup_name: "{{ item.name }}"
     namespace_list: '{{ item.namespace_list }}'
-    oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+    oadp_cron_schedule_expression: '{{ backup_start_time + (key_cnt + 1)*5 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
     oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
   register: all_schedule_cr_processed
 
