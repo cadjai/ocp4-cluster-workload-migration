@@ -1,0 +1,36 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup -n {{ oadp_backup_ns }} -o json | jq -r '.items[] | select(has("status") | not ) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
+  register: oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    msg: "{{ oadp_backup_out.stdout | from_json }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+  ansible.builtin.set_fact:
+    oadp_backup_list: '{{ oadp_backup_out.stdout | from_json }}'
+  when:
+    - oadp_backup_out is defined
+    - oadp_backup_out.rc is defined
+    - oadp_backup_out.rc == 0 
+    - oadp_backup_out.stdout_lines is defined
+    - oadp_backup_out.stdout_lines  | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    var: oadp_backup_list 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell patch | patch schedule to refresh the cron expression time'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} patch schedule.velero.io {{ backup_name }} -n {{ oadp_backup_ns }} --type merge -p '{"spec": {"schedule": "{{ oadp_cron_schedule_expression }}" }}'
+  loop: "{{ oadp_backup_list }}"
+  vars:
+    backup_name: "{{ item.name }}"
+    oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
+  register: all_schedule_cr_processed
+
+

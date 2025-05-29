@@ -1,7 +1,7 @@
 ---
 - name: '{{ ansible_name_module }} | template | Render oadp-schedule CR'
   ansible.builtin.template:
-    src: "templates/oadp-schedule-cr.yaml.j2"
+    src: "templates/oadp-restore-schedule-cr.yaml.j2"
     dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-schedule-cr.yaml"
     force: yes
   register: oadp_schedule_cr_copied

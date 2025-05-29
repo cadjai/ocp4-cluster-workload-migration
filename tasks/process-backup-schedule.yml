@@ -9,6 +9,10 @@
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | oadp-schedule CR '
   ansible.builtin.command: >
     {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-oadp-schedule-cr.yaml -n {{ oadp_backup_ns }}
+  failed_when:
+    - oadp_schedule_cr_applied.rc > 0
+    - oadp_schedule_cr_applied.stderr is defined
+    - "not ' cannot get resource ' in oadp_schedule_cr_applied.stderr"
   when:
     - oadp_storage_backup_location is defined
     - oadp_storage_backup_location != ''
