@@ -22,9 +22,9 @@ oadp_velero_pod_cpu_limit: '4'
 oadp_velero_pod_mem_limit: '8Gi'
 oadp_velero_pod_cpu_request: '2'
 oadp_velero_pod_mem_request: '4Gi'
-oadp_velero_item_op_timeout: '4h'
-oadp_dpa_timeout: '5h'
-oadp_dpa_ttl: '168h0m0s'
+oadp_velero_item_op_timeout: '6h'
+oadp_dpa_timeout: '7h'
+oadp_dpa_ttl: '720h0m0s'
 oadp_bucket_access_key: ''
 oadp_bucket_access_secret: ''
 oadp_s3_bucket: ''
@@ -98,6 +98,21 @@ excluded_resources_list:
   - operatorconditions
   - nodes
   - machineconfigs.machineconfiguration.openshift.io
+  - machineconfig.machineconfiguration.openshift.io
+  - machineconfigpools.machineconfiguration.openshift.io
+  - machineconfigpool.machineconfiguration.openshift.io
+  - kubeletconfigs.machineconfiguration.openshift.io
+  - kubeletconfig.machineconfiguration.openshift.io
+  - machine.machine.openshift.io
+  - machines.machine.openshift.io
+  - machineset.machine.openshift.io
+  - machinesets.machine.openshift.io
+  - controplanemachineset.machine.openshift.io
+  - controplanemachinesets.machine.openshift.io
+  - clusterautoscaler.autoscaling.openshift.io
+  - clusterautoscalers.autoscaling.openshift.io
+  - machineautoscaler.autoscaling.openshift.io
+  - machineautoscalers.autoscaling.openshift.io
   - configurationpolicies.policy.open-cluster-management.io
 apply_oadp_exclusion_label: 'true'
 apply_oadp_exclusion_bsl_label: 'false'
@@ -109,7 +124,8 @@ oadp_exclusion_remove_label: 'velero.io/exclude-from-backup-'
 oadp_exclusion_remove_bsl_label: 'app.kubernetes.io/component-'
 oadp_bsl_to_exclude_list: [] ### list of BSL to label or remove label for in the format of BSL name -n BSL namespace
 restore_name: ''
-oadp_restore_ns: ''
+oadp_restore_ns: '{{ oadp_backup_ns }}'
+backups_to_restore: ''
 add_odf_ca_cert: 'false'
 add_oadp_sc_change_cm: 'true'
 add_restore: 'true'
@@ -117,3 +133,9 @@ add_oadp_schedule: 'false'
 oadp_restore_cs_name: 'gp3-csi'
 label_non_running_pods: 'true'
 oadp_exclusion_special_objects_list: [] ### list of additional objects to exclude in the format of object name and namespace (e.g. pod test -n test-ns)
+### use these to control the backups to restore. You can also provide your own select statement to override the complex one below
+oadp_restore_select_filter_simple: 'select([.status.phase] | inside(["Completed"]))'
+oadp_restore_select_filter_complex: 'select([.status.phase] | inside(["Completed"])) | select(.metadata.name | contains("05022025"))'
+oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_simple }}'
+use_oadp_complex_select_filter: 'true'
+backups_to_exclude_from_restore: []
