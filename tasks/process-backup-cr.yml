@@ -25,12 +25,12 @@
 
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get |  backup CR'
   ansible.builtin.shell: >
-    {{ openshift_cli }} get backup -n {{ oadp_backup_ns }} --no-headers | awk '{print $1}' | grep {{ backup_name }}
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }} --no-headers | awk '{print $1}' | grep {{ backup_name }}
   register: backup_cr
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
   ansible.builtin.command: >
-    {{ openshift_cli }} get backup "{{ backup_cr.stdout }}" -n {{ oadp_backup_ns }} -o jsonpath='{.status.phase}'
+    {{ openshift_cli }} get backup.velero.io "{{ backup_cr.stdout }}" -n {{ oadp_backup_ns }} -o jsonpath='{.status.phase}'
   when:
     - backup_cr.rc is defined
     - backup_cr.rc == 0

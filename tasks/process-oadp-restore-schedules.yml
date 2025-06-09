@@ -1,7 +1,7 @@
 ---
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
   ansible.builtin.shell: >
-    {{ openshift_cli }} get backup -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed", "InProgress"]) | not ) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
+    {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed", "InProgress"]) | not ) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
   when:
     - not oadp_backup_list is defined or oadp_backup_list | length == 0 or oadp_backup_list == ''
   register: oadp_backup_out
@@ -28,8 +28,25 @@
 
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
   ansible.builtin.shell: >
-    {{ openshift_cli }} get backupstoragelocations -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
+    {{ openshift_cli }} get backupstoragelocation.velero.io -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
   register: oadp_storage_backup_location_out
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR phase'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backupstoragelocation.velero.io {{ oadp_storage_backup_location_out.stdout }} -n {{ oadp_backup_ns }} -ojsonpath='{.status.phase}{"\n"}'
+  when:
+    - oadp_storage_backup_location_out.stdout is defined
+    - oadp_storage_backup_location_out.stdout != ''
+  register: oadp_bsl_phase_out
+
+- name: '{{ ansible_name_module }} | assert | the Backup Storage Location'
+  ansible.builtin.assert:
+    that:
+      - oadp_bsl_phase_out is defined
+      - oadp_bsl_phase_out.stdout is defined
+      - oadp_bsl_phase_out.stdout != ''
+      - "'Available' in oadp_bsl_phase_out.stdout"
+    msg: "The Backup Storage Location has to exist with Available state to run backups "
 
 - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
   ansible.builtin.include_tasks: process-restore-schedule.yml 
