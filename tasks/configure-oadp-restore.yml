@@ -36,173 +36,115 @@
           - oadp_controller_out.rc is defined and oadp_controller_out.rc == 0
         msg: " the OADP must be installed before running this playbook"
 
-- name: '{{ ansible_name_module }} | Configure ODP DPA'
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | DPA CR '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataprotectionapplication.oadp.openshift.io -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_dpa_out
+
+- name: '{{ ansible_name_module }} | Add SC change CM'
+  when:
+    - add_oadp_sc_change_cm is defined 
+    - add_oadp_sc_change_cm | bool 
   block:
-    - name: '{{ ansible_name_module }} | assert | the bucketname is defined'
-      ansible.builtin.assert:
-        that:
-          - oadp_s3_bucket is defined
-          - oadp_s3_bucket != '' 
-        msg: "The repository storage bucket name is required for the Mig Storgae Repo configuration"
-
-    - name: '{{ ansible_name_module }} | assert | the S3 endpoint is defined'
-      ansible.builtin.assert:
-        that:
-          - oadp_s3url is defined
-          - oadp_s3url != '' 
-        msg: "The repository storage S3 URL endpoint is required for the Mig Storgae Repo configuration"
-
-    - name: '{{ ansible_name_module }} | assert | the bucket access key is defined'
-      ansible.builtin.assert:
-        that:
-          - oadp_bucket_access_key is defined
-          - oadp_bucket_access_key != '' 
-        msg: "The repository storage bucket access key is required for the Mig Storgae Repo configuration"
-
-    - name: '{{ ansible_name_module }} | assert | the bucket access secret is defined'
-      ansible.builtin.assert:
-        that:
-          - oadp_bucket_access_secret is defined
-          - oadp_bucket_access_secret != '' 
-        msg: "The repository storage bucket access secret is required for the Mig Storgae Repo configuration"
-
-    - name: '{{ ansible_name_module }} | template | Render cloud-credentials'
+    - name: '{{ ansible_name_module }} | template | Render oadp-change-sc-cm.yaml.j2 CM'
       ansible.builtin.template:
-        src: "templates/credentials-cloud.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-cloud-credentials"
+        src: "templates/oadp-change-sc-cm.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-change-sc-cm.yaml"
         force: yes
-      vars:
-        aws_access_key: '{{ oadp_bucket_access_key }}'
-        aws_access_secret: '{{ oadp_bucket_access_secret }}'
-      register: oadp_cloud_cred_config_copied
+      register: oadp_sc_change_cm_manifest_copied
 
-    - name: '{{ ansible_name_module }} | retrieve and set openshift service ca cert on DPA OCP CA cert not provided'
-      when:
-        - add_odf_ca_cert is defined 
-        - add_odf_ca_cert | bool 
-        - not odf_ca_cert_b64 is defined
-      block:
-        - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | retrieve ocp svc ca'
-          ansible.builtin.shell: >
-            {{ openshift_cli }} get cm openshift-service-ca.crt  -n {{ oadp_restore_ns }} -o jsonpath='{.data.service-ca\.crt}' | base64 -w0; echo 
-          register: ocp_svc_cert_b64_out
-        - name: '{{ ansible_name_module }} | set_fact | CA Cert B64 '
-          ansible.builtin.set_fact:
-            odf_ca_cert_b64: "{{ ocp_svc_cert_b64_out.stdout }}"
-          when:
-            - ocp_svc_cert_b64_out is defined
-            - ocp_svc_cert_b64_out.stdout is defined
-            - ocp_svc_cert_b64_out.stdout != '' 
-
-    - name: '{{ ansible_name_module }} | Add SC change CM'
-      when:
-        - add_oadp_sc_change_cm is defined 
-        - add_oadp_sc_change_cm | bool 
-      block:
-        - name: '{{ ansible_name_module }} | template | Render oadp-change-sc-cm.yaml.j2 CM'
-          ansible.builtin.template:
-            src: "templates/oadp-change-sc-cm.yaml.j2"
-            dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-change-sc-cm.yaml"
-            force: yes
-          register: oadp_sc_change_cm_manifest_copied
-
-        - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP SC Change CM'
-          ansible.builtin.command: >
-            {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-change-sc-cm.yaml 
-          when:
-            - oadp_sc_change_cm_manifest_copied is defined
-            - oadp_sc_change_cm_manifest_copied.dest is defined
-            - oadp_sc_change_cm_manifest_copied.state is defined
-            - "'file' in oadp_sc_change_cm_manifest_copied.state"
-          register: oadp_sc_change_cm_manifest_applied
-
-    - name: '{{ ansible_name_module }} | template | Render oadp-dataprotectionapplication CR'
-      ansible.builtin.template:
-        src: "templates/oadp-dataprotectionapplication-cr.yaml.j2"
-        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-dataprotectionapplication-cr.yaml"
-        force: yes
-      vars:
-        oadp_restore_ns: '{{ oadp_restore_ns }}'
-        s3url: '{{ oadp_s3url }}'
-        bucket_name: '{{ oadp_s3_bucket }}'
-        backup_prefix: '{{ oadp_backup_prefix }}'
-        bucket_region: '{{ oadp_bucket_region }}'
-        backup_name: '{{ default_backup_name }}'
-      register: oadp_dpa_manifest_copied
-
-    - name: '{{ ansible_name_module }} | set_fact |  oadp_bucket_secret_file '
-      ansible.builtin.set_fact:
-        oadp_bucket_secret_file: '{{ oadp_cloud_cred_config_copied.dest }}'
-      when:
-        - oadp_cloud_cred_config_copied is defined
-        - oadp_cloud_cred_config_copied.dest is defined
-        - oadp_cloud_cred_config_copied.dest != ""
-
-    - name: '{{ ansible_name_module }} | set_fact |  oadp_bucket_secret_name '
-      ansible.builtin.set_fact:
-        oadp_bucket_secret_name: 'cloud-credentials'
-      when:
-        - not oadp_bucket_secret_name is defined or oadp_bucket_secret_name == ''
-
-    - name: '{{ ansible_name_module }} | Get Existing Mig Storage Access secret'
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP SC Change CM'
       ansible.builtin.command: >
-        {{ openshift_cli }} get secret {{ oadp_bucket_secret_name }} -n {{ oadp_restore_ns }}
-      ignore_errors: yes
-      register: oadp_bucket_secret_exist
-
-    - name: '{{ ansible_name_module }} | Delete Existing Mig Storage Access  secret'
-      ansible.builtin.command: >
-        {{ openshift_cli }} delete secret {{ oadp_bucket_secret_name }} -n {{ oadp_restore_ns }} 
-      ignore_errors: yes
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-change-sc-cm.yaml 
       when:
-        - oadp_bucket_secret_exist.rc is defined
-        - oadp_bucket_secret_exist.rc == 0
-        - oadp_bucket_secret_exist.stdout is defined
-        - oadp_bucket_secret_exist.stdout != '' 
-        - oadp_bucket_secret_name in oadp_bucket_secret_exist.stdout
-      register: oadp_bucket_secret_delete
+        - oadp_sc_change_cm_manifest_copied is defined
+        - oadp_sc_change_cm_manifest_copied.dest is defined
+        - oadp_sc_change_cm_manifest_copied.state is defined
+        - "'file' in oadp_sc_change_cm_manifest_copied.state"
+      register: oadp_sc_change_cm_manifest_applied
 
-    - name: '{{ ansible_name_module }} | create Mig Storage Access  secret'
-      ansible.builtin.command: >
-        {{ openshift_cli }} create secret generic {{ oadp_bucket_secret_name }} \
-          --from-file=cloud={{ oadp_bucket_secret_file }} \
-           -n {{ oadp_restore_ns }}
-      register: oadp_bucket_secret_created
+###  Configure ODP DPA
+- name: '{{ ansible_name_module }} | import_tasks | Import additional DPA processing tasks'
+  ansible.builtin.include_tasks: configure-oadp-dpa.yml
+  vars:
+    add_dpa: "true"
+    backup_name: '{{ default_backup_name }}'
+    s3url: '{{ oadp_s3url }}'
+    bucket_name: '{{ oadp_s3_bucket }}'
+    backup_prefix: '{{ oadp_backup_prefix }}'
+    bucket_region: '{{ oadp_bucket_region }}'
+  when:
+    - (override_dpa is defined and override_dpa | bool) or (oadp_dpa_out.stdout is defined and oadp_dpa_out.stdout == '')
 
-    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP DPA'
-      ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ oadp_dpa_manifest_copied.dest }} 
-      when:
-        - oadp_dpa_manifest_copied is defined
-        - oadp_dpa_manifest_copied.dest is defined
-        - oadp_dpa_manifest_copied.state is defined
-        - "'file' in oadp_dpa_manifest_copied.state"
-      register: oadp_dpa_config_applied
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backupstoragelocation.velero.io -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
+  register: oadp_storage_restore_location_out
 
-    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
-      ansible.builtin.wait_for:
-        timeout: 60
-      delegate_to: localhost
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR phase'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backupstoragelocation.velero.io {{ oadp_storage_restore_location_out.stdout }} -n {{ oadp_restore_ns }} -ojsonpath='{.status.phase}{"\n"}'
+  when:
+    - oadp_storage_restore_location_out.stdout is defined
+    - oadp_storage_restore_location_out.stdout != ''
+  register: oadp_bsl_phase_out
 
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get backupstoragelocations -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
-      register: oadp_storage_restore_location_out
+- name: '{{ ansible_name_module }} | assert | the Backup Storage Location'
+  ansible.builtin.assert:
+    that:
+      - oadp_bsl_phase_out is defined
+      - oadp_bsl_phase_out.stdout is defined
+      - oadp_bsl_phase_out.stdout != ''
+      - "'Available' in oadp_bsl_phase_out.stdout"
+    msg: "The Backup Storage Location has to exist with Available state to run backups "
 
-    - name: '{{ ansible_name_module }} | set_fact | oadp_storage_restore_location '
-      ansible.builtin.set_fact:
-        oadp_storage_restore_location: "{{ oadp_storage_restore_location_out.stdout }}"
-      when:
-        - oadp_storage_restore_location_out.stdout is defined
-        - oadp_storage_restore_location_out.stdout != ''
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR phase'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backupstoragelocation.velero.io {{ oadp_storage_restore_location_out.stdout }} -n {{ oadp_restore_ns }} -ojsonpath='{.status.phase}{"\n"}'
+  when:
+    - oadp_storage_restore_location_out.stdout is defined
+    - oadp_storage_restore_location_out.stdout != ''
+  register: oadp_bsl_phase_out
+
+- name: '{{ ansible_name_module }} | assert | the Backup Storage Location'
+  ansible.builtin.assert:
+    that:
+      - oadp_bsl_phase_out is defined
+      - oadp_bsl_phase_out.stdout is defined
+      - oadp_bsl_phase_out.stdout != ''
+      - "'Available' in oadp_bsl_phase_out.stdout"
+    msg: "The Backup Storage Location has to exist with Available state to run backups "
+
+- name: '{{ ansible_name_module }} | set_fact | oadp_storage_restore_location '
+  ansible.builtin.set_fact:
+    oadp_storage_restore_location: "{{ oadp_storage_restore_location_out.stdout }}"
+  when:
+    - oadp_storage_restore_location_out.stdout is defined
+    - oadp_storage_restore_location_out.stdout != ''
+    - oadp_bsl_phase_out is defined
+    - oadp_bsl_phase_out.stdout is defined
+    - oadp_bsl_phase_out.stdout != ''
+    - "'Available' in oadp_bsl_phase_out.stdout"
 
 - name: '{{ ansible_name_module }} | Configure OADP Restore  '
   when:
     - not backups_to_restore is defined or backups_to_restore | length == 0 or backups_to_restore == ''
   block:
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+    - name: '{{ ansible_name_module }} | set_fact | set select filter string to use'
+      ansible.builtin.set_fact:
+        oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_complex }}'
+      when:
+        - use_oadp_complex_select_filter is defined
+        - use_oadp_complex_select_filter | bool
+        - oadp_restore_select_filter_complex is defined
+        - oadp_restore_select_filter_complex != ''
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get backup -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s
+        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0 
       register: completed_oadp_backup_out
 
     - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
@@ -210,7 +152,7 @@
         msg: "{{ completed_oadp_backup_out.stdout | from_json }}"
         verbosity: 2
 
-    - name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+    - name: '{{ ansible_name_module }} | set_fact | set completed_oadp_backup_list in array format'
       ansible.builtin.set_fact:
         completed_oadp_backup_list: '{{ completed_oadp_backup_out.stdout | from_json }}'
       when:
@@ -225,20 +167,35 @@
         var: completed_oadp_backup_list 
         verbosity: 2
 
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get backup -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name' 
+        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | .metadata.name' 
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0 
       register: backups_to_restore_raw_out
 
-    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore_list in array format'
       ansible.builtin.set_fact:
-        backups_to_restore: '{{ backups_to_restore_raw_out.stdout_lines | list }}'
+        backups_to_restore_list: '{{ backups_to_restore_raw_out.stdout_lines | list }}'
       when:
         - backups_to_restore_raw_out is defined
         - backups_to_restore_raw_out.rc is defined
         - backups_to_restore_raw_out.rc == 0
         - backups_to_restore_raw_out.stdout_lines is defined
         - backups_to_restore_raw_out.stdout | length > 0 
+
+    - name: '{{ ansible_name_module }} | set_fact | set filtered_backups_to_restore list'
+      ansible.builtin.set_fact:
+        filtered_backups_to_restore: '{{ backups_to_restore_list | symmetric_difference(backups_to_exclude_from_restore) }}'
+      when:
+        - backups_to_exclude_from_restore is defined
+        - backups_to_exclude_from_restore | length > 0 
+
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+      ansible.builtin.set_fact:
+        backups_to_restore: '{{ filtered_backups_to_restore if filtered_backups_to_restore | d([], true) | length > 0 else backups_to_restore_list }}'
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0 
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of backups to restore output '
   ansible.builtin.debug:
@@ -276,8 +233,8 @@
 
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR '
       ansible.builtin.shell: >
-        {{ openshift_cli }} get backupstoragelocations -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
-      register: oadp_storage_backup_location_out
+        {{ openshift_cli }} get backupstoragelocation.velero.io -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
+      register: oadp_storage_restore_location_out
 
          ###  Porcess restore per namespace'
     - name: '{{ ansible_name_module }} | import_tasks | Import additional restore processing tasks'
@@ -287,7 +244,7 @@
         backup_name: "{{ item }}"
         add_oadp_schedule: 'false'
         restore_name: "{{ item }}-restore"
-        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+        oadp_storage_backup_location: "{{ oadp_storage_restore_location_out.stdout }}"
       when:
         - process_backup_per_namespace is defined
         - process_backup_per_namespace | bool
@@ -300,7 +257,11 @@
         backup_name: "{{ default_backup_name }}"
         add_oadp_schedule: 'false'
         restore_name: "{{ default_backup_name }}-restore"
-        oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"
+        oadp_storage_backup_location: "{{ oadp_storage_restore_location_out.stdout }}"
       when:
         - not process_backup_per_namespace is defined or not process_backup_per_namespace | bool
       register: restore_bundle_processed
+
+    - name: '{{ ansible_name_module }} | set_fact | unset backups_to_restore '
+      ansible.builtin.set_fact:
+        backups_to_restore: [] 

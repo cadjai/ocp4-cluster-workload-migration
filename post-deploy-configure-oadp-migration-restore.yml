@@ -126,13 +126,17 @@
         - cluster_infra_id.stdout is defined
         - cluster_infra_id.stdout != ''
 
+    - name: '{{ ansible_name_module }} | set_fact | cluster_id '
+      ansible.builtin.set_fact:
+        oadp_backup_ns: "{{ oadp_restore_ns }}"
+      when:
+        - not oadp_backup_ns is defined or oadp_backup_ns != oadp_restore_ns
+
     - name: '{{ ansible_name_module }} | import_tasks | Import OADP Restore precheck tasks'
-      ansible.builtin.import_tasks: tasks/validate-oadp-restore-precheck-info-on-dest-cluster.yml 
+      ansible.builtin.import_tasks: tasks/validate-oadp-restore-precheck-info-on-dest-cluster.yml
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator install check tasks'
       ansible.builtin.import_tasks: tasks/ensure-oadp-operator-is-installed.yml
-      vars:
-        oadp_backup_ns: '{{ oadp_restore_ns }}'
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP restore config tasks'
       ansible.builtin.import_tasks: tasks/configure-oadp-restore.yml
@@ -141,4 +145,3 @@
         add_oadp_schedule: 'false'
         add_oadp_sc_change_cm: 'true'
         restore_name: "{{ default_backup_name }}-restore"
-
