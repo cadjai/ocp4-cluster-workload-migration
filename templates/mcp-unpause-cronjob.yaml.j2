@@ -1,0 +1,108 @@
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: mcp-unpause
+  namespace: {{ oadp_restore_ns }} 
+  labels:
+    template: mcp-unpause-cronjob
+    app.kubernetes.io/instance: mcp-unpause
+spec:
+  schedule: {{ oadp_res_exclusion_cron_expression | d('1,31 * * * *', true) }}
+  startingDeadlineSeconds: 1800
+  concurrencyPolicy: Forbid
+  suspend: false
+  jobTemplate:
+    metadata:
+    spec:
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+        spec:
+          nodeSelector:
+            node-role.kubernetes.io/worker: ''
+          restartPolicy: Never
+          schedulerName: default-scheduler
+          terminationGracePeriodSeconds: 30
+          securityContext: {}
+          containers:
+            - resources:
+                limits:
+                  cpu: 1000m
+                  memory: 2000Mi
+                requests:
+                  cpu: 200m
+                  memory: 400Mi
+              terminationMessagePath: /dev/termination-log
+              name: mcp-unpause
+              env:
+                - name: OCP_CLI
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ mcp_unpause_config_cm_name }} 
+                      key: ocpCli
+                - name: SKIP_API_LOGIN
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ mcp_unpause_config_cm_name }} 
+                      key: skipApiLogin 
+                - name: PAUSE_MCP 
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ mcp_unpause_config_cm_name }} 
+                      key: pauseMCP 
+                - name: UNPAUSE_MCP 
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ mcp_unpause_config_cm_name }} 
+                      key: unpauseMCP
+                - name: STAGING_DIR
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ mcp_unpause_config_cm_name }} 
+                      key: containerStagingDir
+              imagePullPolicy: IfNotPresent
+              volumeMounts:
+                - name: mcp-unpause-files
+                  mountPath: /projects/files
+                - name: mcp-unpause-tasks
+                  mountPath: /projects/code/mcp-unpause-tasks.yml
+                  subPath: mcp-unpause-tasks.yml
+                - name: restore-crs-state-tasks 
+                  mountPath: /projects/code/restore-crs-state-tasks.yml
+                  subPath: mcp-unpause-tasks.yml
+                - name: mcp-unpause-play
+                  mountPath: /projects/code/process-mcp-unpause.yml
+                  subPath: process-mcp-unpause.yml
+              terminationMessagePolicy: File
+              image: {{ oadp_resource_exclusion_cronjob_image | d('registry.redhat.io/devspaces/udi-rhel8-bastion:latest', true) }}
+              command:
+                - /usr/bin/ansible-playbook
+              args:
+                - '-i localhost'
+                - '-e openshift_cli=$(OCP_CLI)'
+                - '-e skip_api_login_logout=$(SKIP_API_LOGIN)'
+                - '-e pause_mcp=$(PAUSE_MCP)'
+                - '-e unpause_mcp=$(UNPAUSE_MCP)'
+                - '-e staging_dir=$(STAGING_DIR)'
+                - '-vvv'
+                - /projects/code/process-mcp-unpause.yml
+          serviceAccount: velero
+          volumes:
+            - name: mcp-unpause-files
+{% if add_cronjob_pvc is defined and add_cronjob_pvc | bool %}
+              persistentVolumeClaim:
+                claimName: mcp-unpause-files
+{% else %}
+              emptyDir: {}
+{% endif %}
+            - name: mcp-unpause-tasks
+              configMap:
+                name: mcp-unpause-tasks-configmap
+            - name: mcp-unpause-play
+              configMap:
+                name: mcp-unpause-playbook-configmap
+          dnsPolicy: ClusterFirst
+          tolerations:
+            - operator: Exists
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1

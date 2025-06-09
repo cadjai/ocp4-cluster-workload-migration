@@ -1,0 +1,54 @@
+---
+- name: '{{ ansible_name_module }} | Retrieve cluster MCPs'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get mcp --no-headers | awk '{print $1}'
+  register: cluster_mcps
+
+- name: '{{ ansible_name_module }} | Retrieve running cluster MCPs'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get mcp -o json | jq -r '.items[] | select(.status.readyMachineCount < .status.updatedMachineCount) | {"name": .metadata.name, "readyCount": .status.readyMachineCount, "totalCount": .status.machineCount}' | jq -s length 
+  register: running_cluster_mcps_count
+
+- name: '{{ ansible_name_module }} | Pause cluster MCPs'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec": {"paused": true }}'
+  loop: "{{ cluster_mcps.stdout_lines }}"
+  when:
+    - pause_mcp is defined
+    - pause_mcp | bool 
+  register: cluster_mcps_paused
+
+- name: '{{ ansible_name_module }} | wait_for | wait for MCP Pause to be ready'
+  ansible.builtin.wait_for:
+    timeout: 90
+  delegate_to: localhost
+  when:
+    - running_cluster_mcps_count is defined 
+    - running_cluster_mcps_count | int > 0 
+
+- name: '{{ ansible_name_module }} | UnPause cluster MCPs'
+  ansible.builtin.command: >
+    {{ openshift_cli }} patch mcp {{ item }} --type merge -p '{"spec": {"paused": false }}'
+  loop: "{{ cluster_mcps.stdout_lines }}"
+  when:
+    - unpause_mcp is defined
+    - unpause_mcp | bool 
+    - restore_job_completed is defined 
+    - restore_job_completed | bool
+  register: cluster_mcps_unpaused
+
+- name: '{{ ansible_name_module }} | Remove restore CRs State cron job when MCP unpaused is complete'
+  ansible.builtin.command: >
+    {{ openshift_cli }} cronjob mcp-unpause -n {{ oadp_restore_ns }} 
+  ignore_errors: true
+  when:
+    - unpause_mcp is defined
+    - unpause_mcp | bool 
+    - restore_job_completed is defined 
+    - restore_job_completed | bool
+    - cluster_mcps_unpaused is defined
+    - cluster_mcps_unpaused.rc is defined
+    - cluster_mcps_unpaused.rc == 0 
+    - cluster_mcps_unpaused.results is defined
+    - cluster_mcps_unpaused.results | length > 0 
+  register: mcps_unpause_cronjob_deleted

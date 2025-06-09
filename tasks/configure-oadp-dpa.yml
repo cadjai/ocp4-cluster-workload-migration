@@ -104,7 +104,7 @@
         - oadp_bucket_secret_name in oadp_bucket_secret_exist.stdout
       register: oadp_bucket_secret_delete
 
-    - name: '{{ ansible_name_module }} | create Mig Storage Access  secret'
+    - name: '{{ ansible_name_module }} | create BSL  Storage Access  secret'
       ansible.builtin.command: >
         {{ openshift_cli }} create secret generic {{ oadp_bucket_secret_name }} \
           --from-file=cloud={{ oadp_bucket_secret_file }} \

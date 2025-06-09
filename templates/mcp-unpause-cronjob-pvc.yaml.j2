@@ -1,0 +1,16 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mcp-unpause-files
+  namespace: {{ oadp_restore_ns }}
+  labels:
+    template: mcp-unpause-cronjob
+    app.kubernetes.io/instance: mcp-unpause
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: '1Gi'
+  storageClassName: 'gp3-csi'
+  volumeMode: Filesystem

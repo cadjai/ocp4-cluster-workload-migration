@@ -145,3 +145,50 @@
         add_oadp_schedule: 'false'
         add_oadp_sc_change_cm: 'true'
         restore_name: "{{ default_backup_name }}-restore"
+
+    - name: '{{ ansible_name_module }} | Process MCP unpausing cron job '
+      block:
+        - name: '{{ ansible_name_module }} | set_fact |  mcp_unpause_config_cm_name'
+          ansible.builtin.set_fact:
+            mcp_unpause_config_cm_name: 'mcp-unpause-config-configmap'
+          when:
+            - not mcp_unpause_config_cm_name is defined or mcp_unpause_config_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_task_cm_name'
+          ansible.builtin.set_fact:
+            mcp_unpause_task_cm_name: 'mcp-unpause-tasks-configmap'
+          when:
+            - not mcp_unpause_task_cm_name is defined or mcp_unpause_task_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_playbook_cm_name'
+          ansible.builtin.set_fact:
+            mcp_unpause_playbook_cm_name: 'mcp-unpause-playbook-configmap'
+          when:
+            - not mcp_unpause_playbook_cm_name is defined or mcp_unpause_playbook_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_task_file'
+          ansible.builtin.set_fact:
+            mcp_unpause_task_file: 'tasks/process-mcp-pausing-unpausing.yml'
+          when:
+            - not mcp_unpause_task_file is defined or mcp_unpause_task_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_crs_state_task_file'
+          ansible.builtin.set_fact:
+            restore_crs_state_task_file: 'tasks/restore-crs-state.yml'
+          when:
+            - not restore_crs_state_task_file is defined or restore_crs_state_task_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_playbook_file'
+          ansible.builtin.set_fact:
+            mcp_unpause_playbook_file: 'files/unpause-mcps.yml'
+          when:
+            - not mcp_unpause_playbook_file is defined or mcp_unpause_playbook_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | staging_dir_in_pod'
+          ansible.builtin.set_fact:
+            staging_dir_in_pod: '/projects/files'
+          when:
+            - not staging_dir_in_pod is defined or staging_dir_in_pod == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import MCP Unpause cronjob tasks'
+          ansible.builtin.import_tasks: tasks/create-mcp-unpause-cronjob-resources.yml

@@ -1,0 +1,80 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set mark the restore job incomplete as default value'
+  ansible.builtin.set_fact:
+    restore_job_completed: 'false'
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }}  --no-headers | wc -l 
+  register: oadp_restore_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of OADP Restore CRs is: ' oadp_restore_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | unprocessed oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }} -o json | jq -r '.items[] | select(has("status") | not ) | { "namespace_list": .spec.includedNamespaces}' | jq -s length 
+  register: unprocessed_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print unprocessed oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of unprocessed OADP Restore CRs is: ' unprocessed_oadp_restore_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | processed oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }} -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Completed", "PartiallyFailed"])) \
+       | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s length 
+  register: processed_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print processed oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of processed OADP Restore CRs is: ' processed_oadp_restore_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | inprogress oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }} -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["InProgress"])) \ 
+      | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s length 
+  register: inprogress_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print inprogress oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of inprogress OADP Restore CRs is: ' inprogress_oadp_restore_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | completed oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }} -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["Completed"])) \ 
+      | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s length 
+  register: completed_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print completed oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of completed OADP Restore CRs is: ' completed_oadp_restore_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | failed oadp restore count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n {{ oadp_restore_ns }} -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["PartiallyFailed", "Failed"])) \
+      | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s length 
+  register: failed_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed oadp restore count output '
+  ansible.builtin.debug:
+    msg: "{{ 'The count of failed OADP Restore CRs is: ' failed_oadp_restore_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set mark the restore job complete in no restore CR is inprogress and there is no unprocessed restore CR'
+  ansible.builtin.set_fact:
+    restore_job_completed: 'true'
+  when:
+    - unprocessed_oadp_restore_out.stdout | int == 0
+    - inprogress_oadp_restore_out.stdout | int == 0
+

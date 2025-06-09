@@ -1,0 +1,129 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve MCP unpause CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ mcp_unpause_config_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_config_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete MCP unpause CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ mcp_unpause_config_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - mcp_unpause_config_cm_retrieved is defined
+    - mcp_unpause_config_cm_retrieved.rc is defined
+    - mcp_unpause_config_cm_retrieved.rc == 0 
+    - mcp_unpause_config_cm_retrieved.stdout is defined
+    - mcp_unpause_config_cm_retrieved.stdout != '' 
+  register: mcp_unpause_config_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create MCP unpause CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ mcp_unpause_config_cm_name }} \
+      --from-literal=ocpCli={{ ocp_cli_path_in_pod }} \
+      --from-literal=skipApiLogin={{ skip_api_login_logout }} \
+      --from-literal=pauseMCP=false \
+      --from-literal=unpauseMCP=true \
+      --from-literal=containerStagingDir={{ staging_dir_in_pod }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_config_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve MCP unpause tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ mcp_unpause_task_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_task_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete MCP unpause tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ mcp_unpause_task_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - mcp_unpause_task_cm_retrieved is defined
+    - mcp_unpause_task_cm_retrieved.rc is defined
+    - mcp_unpause_task_cm_retrieved.rc == 0 
+    - mcp_unpause_task_cm_retrieved.stdout is defined
+    - mcp_unpause_task_cm_retrieved.stdout != '' 
+  register: mcp_unpause_task_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create MCP unpause task CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ mcp_unpause_task_cm_name }} \
+      --from-file=mcp-unpause-tasks.yml={{ mcp_unpause_task_file }} \
+      --from-file=restore-crs-state-tasks.yml={{ restore_crs_state_task_file }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_task_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve MCP unpause playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ mcp_unpause_playbook_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_playbook_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete MCP unpause playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ mcp_unpause_playbook_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - mcp_unpause_playbook_cm_retrieved is defined
+    - mcp_unpause_playbook_cm_retrieved.rc is defined
+    - mcp_unpause_playbook_cm_retrieved.rc == 0 
+    - mcp_unpause_playbook_cm_retrieved.stdout is defined
+    - mcp_unpause_playbook_cm_retrieved.stdout != '' 
+  register: mcp_unpause_playbook_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create MCP unpause playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ mcp_unpause_playbook_cm_name }} \
+      --from-file=process-mcp-unpause.yml={{ mcp_unpause_playbook_file }} \
+       -n  {{ oadp_restore_ns }} 
+  register: mcp_unpause_playbook_cm_created
+
+- name: '{{ ansible_name_module }} | Add MCP unpause cronjob pvc'
+  when:
+    - add_cronjob_pvc is defined
+    - add_cronjob_pvc | bool
+  block:
+    - name: '{{ ansible_name_module }} | template | Render  MCP unpause cronjob pvc'
+      ansible.builtin.template:
+        src: "templates/mcp-unpause-cronjob-pvc.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-mcp-unpause-cronjob-pvc.yaml"
+        force: yes
+      register: mcp_unpause_cronjob_pvc_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create MCP unpause cronjob pvc'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ mcp_unpause_cronjob_pvc_copied.dest }}
+      when:
+        - mcp_unpause_cronjob_pvc_copied is defined
+        - mcp_unpause_cronjob_pvc_copied.dest is defined
+        - mcp_unpause_cronjob_pvc_copied.state is defined
+        - "'file' in mcp_unpause_cronjob_pvc_copied.state"
+      register:  mcp_unpause_cronjob_pvc_applied
+
+- name: '{{ ansible_name_module }} | template | Render  MCP unpause cronjob'
+  ansible.builtin.template:
+    src: "templates/mcp-unpause-cronjob.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-mcp-unpause-cronjob.yaml"
+    force: yes
+  vars:
+  register: mcp_unpause_cronjob_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create MCP unpause cronjob'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ mcp_unpause_cronjob_copied.dest }}
+  when:
+    - mcp_unpause_cronjob_copied is defined
+    - mcp_unpause_cronjob_copied.dest is defined
+    - mcp_unpause_cronjob_copied.state is defined
+    - "'file' in mcp_unpause_cronjob_copied.state"
+  register:  mcp_unpause_cronjob_applied
+

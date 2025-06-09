@@ -1,0 +1,13 @@
+- name: ' Konductor | Provision UPI Infra | unpause-mcps.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Unpause MCPS once the OADP restore are all processed "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional Restore CRs state tasks'
+      ansible.builtin.import_tasks: restore-crs-state-tasks.yml 
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
+      ansible.builtin.import_tasks: mcp-unpause-tasks.yml 
