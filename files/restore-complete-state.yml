@@ -1,0 +1,16 @@
+- name: ' Konductor | Provision UPI Infra | restore-complete-state.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Monitor OADP Restore process completion state "
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional Restore CRs state tasks'
+      ansible.builtin.import_tasks: restore-state-tasks.yml 
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
+      ansible.builtin.include_tasks: mcp-unpause-tasks.yml
+      when:
+        - unpause_mcp is defined
+        - unpause_mcp | bool 

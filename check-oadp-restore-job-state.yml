@@ -1,0 +1,100 @@
+- name: ' Konductor | Provision UPI Infra | check-oadp-restore-job-state.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "check OADP Restore job Process completion state "
+    ansible_name_module: " Post Cluster Installation | Configure Cluster application restore Service | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | ensure required variables are provided '
+      assert:
+        that:
+          - oadp_restore_ns is defined and oadp_restore_ns != ''
+        msg: "the oadp_restore_ns must be set to a valid namespace name where the backups are located "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP restore job state tasks'
+      ansible.builtin.import_tasks: tasks/restore-crs-state.yml
+      when:
+        - not setup_cronjob is defined or not setup_cronjob | bool 
+
+    - name: '{{ ansible_name_module }} | Process Restore Complete state cron job '
+      when:
+        - setup_cronjob is defined
+        - setup_cronjob | bool 
+      block:
+        - name: '{{ ansible_name_module }} | set_fact |  restore_complete_state_config_cm_name'
+          ansible.builtin.set_fact:
+            restore_complete_state_config_cm_name: 'restore-complete-state-config-configmap'
+          when:
+            - not restore_complete_state_config_cm_name is defined or restore_complete_state_config_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_task_cm_name'
+          ansible.builtin.set_fact:
+            restore_complete_state_task_cm_name: 'restore-complete-state-tasks-configmap'
+          when:
+            - not restore_complete_state_task_cm_name is defined or restore_complete_state_task_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_playbook_cm_name'
+          ansible.builtin.set_fact:
+            restore_complete_state_playbook_cm_name: 'restore-complete-state-playbook-configmap'
+          when:
+            - not restore_complete_state_playbook_cm_name is defined or restore_complete_state_playbook_cm_name == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_task_file'
+          ansible.builtin.set_fact:
+            restore_complete_state_task_file: 'tasks/restore-crs-state.yml'
+          when:
+            - not restore_complete_state_task_file is defined or restore_complete_state_task_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_playbook_file'
+          ansible.builtin.set_fact:
+            mcp_unpause_task_file: 'tasks/process-mcp-pausing-unpausing.yml'
+          when:
+            - not mcp_unpause_playbook_file is defined or mcp_unpause_playbook_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_playbook_file'
+          ansible.builtin.set_fact:
+            restore_complete_state_playbook_file: 'files/restore-complete-state.yml'
+          when:
+            - not restore_complete_state_playbook_file is defined or restore_complete_state_playbook_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | staging_dir_in_pod'
+          ansible.builtin.set_fact:
+            staging_dir_in_pod: '/projects/files'
+          when:
+            - not staging_dir_in_pod is defined or staging_dir_in_pod == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | ocp_cli_path_in_pod'
+          ansible.builtin.set_fact:
+            ocp_cli_path_in_pod: '/usr/bin/oc'
+          when:
+            - not ocp_cli_path_in_pod is defined or ocp_cli_path_in_pod == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import Restore complete state cronjob tasks'
+          ansible.builtin.import_tasks: tasks/create-restore-complete-state-cronjob-resources.yml
+          vars:
+            unpause_mcp: 'false'
+            backup_name: '{{ default_restore_name }}'

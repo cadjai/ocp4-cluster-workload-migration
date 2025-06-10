@@ -1,13 +1,13 @@
 kind: CronJob
 apiVersion: batch/v1
 metadata:
-  name: mcp-unpause
+  name: restore-complete-state
   namespace: {{ oadp_restore_ns }} 
   labels:
-    template: mcp-unpause-cronjob
-    app.kubernetes.io/instance: mcp-unpause
+    template: restore-complete-state-cronjob
+    app.kubernetes.io/instance: restore-complete-state
 spec:
-  schedule: {{ oadp_res_exclusion_cron_expression | d('1,31 * * * *', true) }}
+  schedule: {{ restore_complete_cron_expression | d('1,31 * * * *', true) }}
   startingDeadlineSeconds: 1800
   concurrencyPolicy: Forbid
   suspend: false
@@ -33,48 +33,51 @@ spec:
                   cpu: 200m
                   memory: 400Mi
               terminationMessagePath: /dev/termination-log
-              name: mcp-unpause
+              name: restore-complete-state
               env:
                 - name: OCP_CLI
                   valueFrom:
                     configMapKeyRef:
-                      name: {{ mcp_unpause_config_cm_name }} 
+                      name: {{ restore_complete_state_config_cm_name }} 
                       key: ocpCli
                 - name: SKIP_API_LOGIN
                   valueFrom:
                     configMapKeyRef:
-                      name: {{ mcp_unpause_config_cm_name }} 
+                      name: {{ restore_complete_state_config_cm_name }} 
                       key: skipApiLogin 
-                - name: PAUSE_MCP 
+                - name: PAUSE_MCP
                   valueFrom:
                     configMapKeyRef:
-                      name: {{ mcp_unpause_config_cm_name }} 
-                      key: pauseMCP 
-                - name: UNPAUSE_MCP 
+                      name: {{ restore_complete_state_config_cm_name }}
+                      key: pauseMCP
+                - name: UNPAUSE_MCP
                   valueFrom:
                     configMapKeyRef:
-                      name: {{ mcp_unpause_config_cm_name }} 
+                      name: {{ restore_complete_state_config_cm_name }}
                       key: unpauseMCP
                 - name: STAGING_DIR
                   valueFrom:
                     configMapKeyRef:
-                      name: {{ mcp_unpause_config_cm_name }} 
+                      name: {{ restore_complete_state_config_cm_name }} 
                       key: containerStagingDir
+                - name: RESTORE_NS 
+                  valueFrom:
+                    configMapKeyRef:
+                      name: {{ restore_complete_state_config_cm_name }} 
+                      key: restoreNS 
               imagePullPolicy: IfNotPresent
               volumeMounts:
-                - name: mcp-unpause-files
-                  mountPath: /projects/files
-                - name: mcp-unpause-tasks
+                - name: restore-complete-state-tasks
+                  mountPath: /projects/code/restore-state-tasks.yml
+                  subPath: restore-state-tasks.yml 
+                - name: restore-complete-state-tasks 
                   mountPath: /projects/code/mcp-unpause-tasks.yml
                   subPath: mcp-unpause-tasks.yml
-                - name: restore-crs-state-tasks 
-                  mountPath: /projects/code/restore-crs-state-tasks.yml
-                  subPath: mcp-unpause-tasks.yml
-                - name: mcp-unpause-play
-                  mountPath: /projects/code/process-mcp-unpause.yml
-                  subPath: process-mcp-unpause.yml
+                - name: restore-complete-state-play
+                  mountPath: /projects/code/process-restore-complete-state.yml
+                  subPath: process-restore-complete-state.yml
               terminationMessagePolicy: File
-              image: {{ backup_complete_cronjob_image | d('registry.redhat.io/devspaces/udi-rhel8-bastion:latest', true) }}
+              image: {{ restore_complete_cronjob_image | d('registry.redhat.io/devspaces/udi-rhel8-bastion:latest', true) }}
               command:
                 - /usr/bin/ansible-playbook
               args:
@@ -84,23 +87,17 @@ spec:
                 - '-e pause_mcp=$(PAUSE_MCP)'
                 - '-e unpause_mcp=$(UNPAUSE_MCP)'
                 - '-e staging_dir=$(STAGING_DIR)'
+                - '-e oadp_restore_ns=$(RESTORE_NS)'
                 - '-vvv'
-                - /projects/code/process-mcp-unpause.yml
+                - /projects/code/process-restore-complete-state.yml
           serviceAccount: velero
           volumes:
-            - name: mcp-unpause-files
-{% if add_cronjob_pvc is defined and add_cronjob_pvc | bool %}
-              persistentVolumeClaim:
-                claimName: mcp-unpause-files
-{% else %}
-              emptyDir: {}
-{% endif %}
-            - name: mcp-unpause-tasks
+            - name: restore-complete-state-tasks
               configMap:
-                name: mcp-unpause-tasks-configmap
-            - name: mcp-unpause-play
+                name: restore-complete-state-tasks-configmap
+            - name: restore-complete-state-play
               configMap:
-                name: mcp-unpause-playbook-configmap
+                name: restore-complete-state-playbook-configmap
           dnsPolicy: ClusterFirst
           tolerations:
             - operator: Exists

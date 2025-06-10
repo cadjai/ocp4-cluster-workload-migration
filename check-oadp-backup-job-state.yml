@@ -1,33 +1,19 @@
-- name: ' Konductor | Provision UPI Infra | deploy-oadp-application-backup.yml'
+- name: ' Konductor | Provision UPI Infra | check-oadp-backup-job-state.yml'
   hosts: localhost
   vars:
     ansible_python_interpreter: /usr/bin/python3
-    module: "deploy-oadp-application-backup"
+    module: "check OADP Backup job Process completion state "
     ansible_name_module: " Post Cluster Installation | Configure Cluster application backup Service | {{ module }}"
   vars_files:
     - 'vars/vault.yml'
     - 'vars/global.yml'
     - 'vars/oadp-migration.yml'
   pre_tasks:
-    - name: '{{ ansible_name_module }} | Ensure required variables are set'
-      block:
-        - assert:
-            that:
-              - oadp_bucket_access_key is defined and oadp_bucket_access_key != ""
-            msg: " the oadp_bucket_access_key must be set and valid "
-        - assert:
-            that:
-              - oadp_bucket_access_secret is defined and oadp_bucket_access_secret != ""
-            msg: " the oadp_bucket_access_secret must be set and valid "
-        - assert:
-            that:
-              - oadp_s3url is defined and oadp_s3url != ""
-            msg: " the oadp_s3url must be set and valid "
-
-        - assert:
-            that:
-              - oadp_s3_bucket is defined and oadp_s3_bucket != ''
-            msg: " the oadp_s3_bucket must be set to a valid S3 bucket name  "
+    - name: '{{ ansible_name_module }} | assert | ensure required variables are provided '
+      assert:
+        that:
+          - oadp_backup_ns is defined and oadp_backup_ns != ''
+        msg: "the oadp_backup_ns must be set to a valid namespace name where the backups are located "
 
     - name: Install required pip library
       pip:
@@ -49,51 +35,15 @@
       register: login_out
 
   tasks:
-    - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
-      ansible.builtin.command: >
-        {{ openshift_cli }} get infrastructure cluster -o jsonpath='{.status.infrastructureName}{"\n"}'
-      register: cluster_infra_name
-
-    - name: '{{ ansible_name_module }} | set_fact | cluster_name '
-      ansible.builtin.set_fact:
-        cluster_name: "{{ cluster_infra_name.stdout }}"
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP backup job state tasks'
+      ansible.builtin.import_tasks: tasks/backup-crs-state.yml
       when:
-        - cluster_infra_name.stdout is defined
-        - cluster_infra_name.stdout != ''
-
-    - name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
-      ansible.builtin.command: >
-        {{ openshift_cli }} get clusterversion version -o jsonpath='{.spec.clusterID}{"\n"}' 
-      register: cluster_infra_id
-
-    - name: '{{ ansible_name_module }} | set_fact | cluster_id '
-      ansible.builtin.set_fact:
-        cluster_id: "{{ cluster_infra_id.stdout }}"
-      when:
-        - cluster_infra_id.stdout is defined
-        - cluster_infra_id.stdout != ''
-
-    - name: '{{ ansible_name_module }} | set_fact | backup_name '
-      ansible.builtin.set_fact:
-        backup_name: "{{ backup_name_prefix_strg }}{{ cluster_name }}-bg-backup-{{ ansible_date_time.iso8601_basic_short.split('T')[0] }}"
-      when:
-        - not backup_name is defined or not backup_name != ''
-      vars:
-        backup_name_prefix_strg: "{{ (backup_name_prefix + '-') if backup_name_prefix is defined and backup_name_prefix != '' else '' }}"
-
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
-      ansible.builtin.import_tasks: tasks/process-mcp-pausing-unpausing.yml
-      vars:
-        pause_mcp: 'false'
-        unpause_mcp: 'false'
-
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator install check tasks'
-      ansible.builtin.import_tasks: tasks/ensure-oadp-operator-is-installed.yml
-
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator config tasks'
-      ansible.builtin.import_tasks: tasks/configure-oadp-backup.yml
+        - not setup_cronjob is defined or not setup_cronjob | bool 
 
     - name: '{{ ansible_name_module }} | Process Backup Complete state cron job '
+      when:
+        - setup_cronjob is defined
+        - setup_cronjob | bool 
       block:
         - name: '{{ ansible_name_module }} | set_fact |  backup_complete_state_config_cm_name'
           ansible.builtin.set_fact:
@@ -148,4 +98,3 @@
           vars:
             unpause_mcp: 'false'
             backup_name: '{{ default_backup_name }}'
-

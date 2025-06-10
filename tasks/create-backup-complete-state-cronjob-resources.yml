@@ -1,0 +1,113 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Backup Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ backup_complete_state_config_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  ignore_errors: true
+  register: backup_complete_state_config_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Backup Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ backup_complete_state_config_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - backup_complete_state_config_cm_retrieved is defined
+    - backup_complete_state_config_cm_retrieved.rc is defined
+    - backup_complete_state_config_cm_retrieved.rc == 0 
+    - backup_complete_state_config_cm_retrieved.stdout is defined
+    - backup_complete_state_config_cm_retrieved.stdout != '' 
+  register: backup_complete_state_config_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Backup Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ backup_complete_state_config_cm_name }} \
+      --from-literal=ocpCli={{ ocp_cli_path_in_pod }} \
+      --from-literal=skipApiLogin={{ skip_api_login_logout }} \
+      --from-literal=pauseMCP=false \
+      --from-literal=unpauseMCP={{ set_unpause }} \
+      --from-literal=containerStagingDir={{ staging_dir_in_pod }} \
+      --from-literal=backupNS={{ oadp_backup_ns }} \
+       -n  {{ oadp_backup_ns }} 
+  vars:
+    set_unpause: "{{ unpause_mcp if unpause_mcp is defined and unpause_mcp | bool else 'false'}}"
+  register: backup_complete_state_config_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Backup Complete State tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ backup_complete_state_task_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  ignore_errors: true
+  register: backup_complete_state_task_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Backup Complete State tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ backup_complete_state_task_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - backup_complete_state_task_cm_retrieved is defined
+    - backup_complete_state_task_cm_retrieved.rc is defined
+    - backup_complete_state_task_cm_retrieved.rc == 0 
+    - backup_complete_state_task_cm_retrieved.stdout is defined
+    - backup_complete_state_task_cm_retrieved.stdout != '' 
+  register: backup_complete_state_task_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Backup Complete State task CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ backup_complete_state_task_cm_name }} \
+      --from-file=backup-state-tasks.yml={{ backup_complete_state_task_file }} \
+      --from-file=mcp-unpause-tasks.yml={{ mcp_unpause_task_file }} \
+       -n  {{ oadp_backup_ns }} 
+  register: backup_complete_state_task_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Backup Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ backup_complete_state_playbook_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  ignore_errors: true
+  register: backup_complete_state_playbook_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Backup Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ backup_complete_state_playbook_cm_name }} \
+       -n  {{ oadp_backup_ns }} 
+  when:
+    - backup_complete_state_playbook_cm_retrieved is defined
+    - backup_complete_state_playbook_cm_retrieved.rc is defined
+    - backup_complete_state_playbook_cm_retrieved.rc == 0 
+    - backup_complete_state_playbook_cm_retrieved.stdout is defined
+    - backup_complete_state_playbook_cm_retrieved.stdout != '' 
+  register: backup_complete_state_playbook_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Backup Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ backup_complete_state_playbook_cm_name }} \
+      --from-file=process-backup-complete-state.yml={{ backup_complete_state_playbook_file }} \
+       -n  {{ oadp_backup_ns }} 
+  register: backup_complete_state_playbook_cm_created
+
+- name: '{{ ansible_name_module }} | template | Render  Backup Complete State cronjob'
+  ansible.builtin.template:
+    src: "templates/backup-complete-state-cronjob.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-backup-complete-state-cronjob.yaml"
+    force: yes
+  vars:
+  register: backup_complete_state_cronjob_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Backup Complete State cronjob'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ backup_complete_state_cronjob_copied.dest }}
+  when:
+    - backup_complete_state_cronjob_copied is defined
+    - backup_complete_state_cronjob_copied.dest is defined
+    - backup_complete_state_cronjob_copied.state is defined
+    - "'file' in backup_complete_state_cronjob_copied.state"
+  register:  backup_complete_state_cronjob_applied
+

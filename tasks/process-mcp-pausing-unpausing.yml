@@ -1,4 +1,10 @@
 ---
+- name: '{{ ansible_name_module }} | assert | the toggle pause_mcp or unpause_mcp variable is true'
+  ansible.builtin.assert:
+    that:
+      - (pause_mcp is defined and pause_mcp | bool) or (unpause_mcp is defined and unpause_mcp | bool)
+    msg: "One of the unpause_mcp or pause_mcp variables is required to be true to run this playbook "
+
 - name: '{{ ansible_name_module }} | Retrieve cluster MCPs'
   ansible.builtin.shell: >
     {{ openshift_cli }} get mcp --no-headers | awk '{print $1}'

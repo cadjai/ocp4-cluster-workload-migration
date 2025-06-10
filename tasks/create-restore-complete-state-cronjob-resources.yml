@@ -1,0 +1,113 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ restore_dest_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ restore_dest_cluster_console_url }}:{{ restore_dest_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Restore Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ restore_complete_state_config_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  ignore_errors: true
+  register: restore_complete_state_config_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Restore Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ restore_complete_state_config_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - restore_complete_state_config_cm_retrieved is defined
+    - restore_complete_state_config_cm_retrieved.rc is defined
+    - restore_complete_state_config_cm_retrieved.rc == 0 
+    - restore_complete_state_config_cm_retrieved.stdout is defined
+    - restore_complete_state_config_cm_retrieved.stdout != '' 
+  register: restore_complete_state_config_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Restore Complete State CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ restore_complete_state_config_cm_name }} \
+      --from-literal=ocpCli={{ ocp_cli_path_in_pod }} \
+      --from-literal=skipApiLogin={{ skip_api_login_logout }} \
+      --from-literal=pauseMCP=false \
+      --from-literal=unpauseMCP={{ set_unpause }} \
+      --from-literal=containerStagingDir={{ staging_dir_in_pod }} \
+      --from-literal=restoreNS={{ oadp_restore_ns }} \
+       -n  {{ oadp_restore_ns }} 
+  vars:
+    set_unpause: "{{ unpause_mcp if unpause_mcp is defined and unpause_mcp | bool else 'false'}}"
+  register: restore_complete_state_config_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Restore Complete State tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ restore_complete_state_task_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  ignore_errors: true
+  register: restore_complete_state_task_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Restore Complete State tasks CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ restore_complete_state_task_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - restore_complete_state_task_cm_retrieved is defined
+    - restore_complete_state_task_cm_retrieved.rc is defined
+    - restore_complete_state_task_cm_retrieved.rc == 0 
+    - restore_complete_state_task_cm_retrieved.stdout is defined
+    - restore_complete_state_task_cm_retrieved.stdout != '' 
+  register: restore_complete_state_task_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Restore Complete State task CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ restore_complete_state_task_cm_name }} \
+      --from-file=restore-state-tasks.yml={{ restore_complete_state_task_file }} \
+      --from-file=mcp-unpause-tasks.yml={{ mcp_unpause_task_file }} \
+       -n  {{ oadp_restore_ns }} 
+  register: restore_complete_state_task_cm_created
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | retrieve Restore Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get cm {{ restore_complete_state_playbook_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  ignore_errors: true
+  register: restore_complete_state_playbook_cm_retrieved
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | delete Restore Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete cm {{ restore_complete_state_playbook_cm_name }} \
+       -n  {{ oadp_restore_ns }} 
+  when:
+    - restore_complete_state_playbook_cm_retrieved is defined
+    - restore_complete_state_playbook_cm_retrieved.rc is defined
+    - restore_complete_state_playbook_cm_retrieved.rc == 0 
+    - restore_complete_state_playbook_cm_retrieved.stdout is defined
+    - restore_complete_state_playbook_cm_retrieved.stdout != '' 
+  register: restore_complete_state_playbook_cm_deleted
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} create | create Restore Complete State playbook CM'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create cm {{ restore_complete_state_playbook_cm_name }} \
+      --from-file=process-restore-complete-state.yml={{ restore_complete_state_playbook_file }} \
+       -n  {{ oadp_restore_ns }} 
+  register: restore_complete_state_playbook_cm_created
+
+- name: '{{ ansible_name_module }} | template | Render  Restore Complete State cronjob'
+  ansible.builtin.template:
+    src: "templates/restore-complete-state-cronjob.yaml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}-restore-complete-state-cronjob.yaml"
+    force: yes
+  vars:
+  register: restore_complete_state_cronjob_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Restore Complete State cronjob'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ restore_complete_state_cronjob_copied.dest }}
+  when:
+    - restore_complete_state_cronjob_copied is defined
+    - restore_complete_state_cronjob_copied.dest is defined
+    - restore_complete_state_cronjob_copied.state is defined
+    - "'file' in restore_complete_state_cronjob_copied.state"
+  register:  restore_complete_state_cronjob_applied
+

@@ -1,0 +1,85 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set mark the backup job incomplete as default value'
+  ansible.builtin.set_fact:
+    backup_job_completed: 'false'
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers | wc -l 
+  register: oadp_backup_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of OADP Backup CRs is:  {{ oadp_backup_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | unprocessed oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | jq -r '.items[] | select(has("status") | not )' | jq -s length 
+  register: unprocessed_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print unprocessed oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of unprocessed OADP Backup CRs is: {{ unprocessed_oadp_backup_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | processed oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Completed", "PartiallyFailed"]))' \
+       | jq -s length 
+  register: processed_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print processed oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of processed OADP Backup CRs is:  {{ processed_oadp_backup_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | inprogress oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["InProgress"]))' \ 
+      | jq -s length 
+  register: inprogress_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print inprogress oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of inprogress OADP Backup CRs is:  {{ inprogress_oadp_backup_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | completed oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["Completed"]))' \ 
+      | jq -s length 
+  register: completed_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print completed oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of completed OADP Backup CRs is: {{ completed_oadp_backup_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | failed oadp backup count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["PartiallyFailed", "Failed"]))' \
+       | jq -s length 
+  register: failed_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed oadp backup count output '
+  ansible.builtin.debug:
+    msg: "The count of failed OADP Backup CRs is: {{ failed_oadp_backup_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set mark the backup job complete in no backup CR is inprogress and there is no unprocessed backup CR'
+  ansible.builtin.set_fact:
+    backup_job_completed: 'true'
+  when:
+    - unprocessed_oadp_backup_out.stdout | int == 0
+    - inprogress_oadp_backup_out.stdout | int == 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp backup completion state output '
+  ansible.builtin.debug:
+    msg: "The OADP Backup job completion state is: {{ backup_job_completed }}" 
+    verbosity: 2
+

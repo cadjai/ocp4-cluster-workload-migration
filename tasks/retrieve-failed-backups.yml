@@ -1,7 +1,7 @@
 ---
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
   ansible.builtin.shell: >
-    {{ openshift_cli }} get backup -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Failed", "PartiallyFailed"])) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
+    {{ openshift_cli }} get backup.velero.io -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Failed", "PartiallyFailed"])) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
   register: failed_oadp_backup_out
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
