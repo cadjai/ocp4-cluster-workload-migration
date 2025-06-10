@@ -132,8 +132,14 @@
       when:
         - not oadp_backup_ns is defined or oadp_backup_ns != oadp_restore_ns
 
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
+      ansible.builtin.import_tasks: tasks/process-mcp-pausing-unpausing.yml
+      vars:
+        pause_mcp: 'true'
+        unpause_mcp: 'false'
+
     - name: '{{ ansible_name_module }} | import_tasks | Import OADP Restore precheck tasks'
-      ansible.builtin.import_tasks: tasks/validate-oadp-restore-precheck-info-on-dest-cluster.yml
+      ansible.builtin.import_tasks: tasks/validate-oadp-restore-precheck-info-on-dest-cluster.yml 
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator install check tasks'
       ansible.builtin.import_tasks: tasks/ensure-oadp-operator-is-installed.yml
