@@ -30,15 +30,6 @@
     velero backup logs {{ item.name }} --insecure-skip-tls-verify=true >  {{ staging_dir | d('/tmp', true) }}/velero-backup-details-{{ item.name }}.txt 
     velero backup logs {{ item.name }} --insecure-skip-tls-verify=true | grep -i error >  {{ staging_dir | d('/tmp', true) }}/velero-backup-detail-errors-{{ item.name }}.txt
   loop: "{{ failed_oadp_backup_list }}"
+  ignore_errors: true
   register: all_failed_backups_processed
-
-#- name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
-#  ansible.builtin.include_tasks: process-failed_backup-schedule.yml 
-#  loop: "{{ oadp_backup_list }}"
-#  vars:
-#    backup_name: "{{ item }}"
-#    namespace_list: '{{ item.namespace_list }}'
-#    oadp_cron_schedule_expression: '{{ ansible_date_time.minute | int +2 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
-#  register: all_failed_backups_processed
-
 

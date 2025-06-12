@@ -62,8 +62,6 @@ spec:
                       key: containerStagingDir
               imagePullPolicy: IfNotPresent
               volumeMounts:
-                - name: mcp-unpause-files
-                  mountPath: /projects/files
                 - name: mcp-unpause-tasks
                   mountPath: /projects/code/mcp-unpause-tasks.yml
                   subPath: mcp-unpause-tasks.yml
@@ -88,13 +86,6 @@ spec:
                 - /projects/code/process-mcp-unpause.yml
           serviceAccount: velero
           volumes:
-            - name: mcp-unpause-files
-{% if add_cronjob_pvc is defined and add_cronjob_pvc | bool %}
-              persistentVolumeClaim:
-                claimName: mcp-unpause-files
-{% else %}
-              emptyDir: {}
-{% endif %}
             - name: mcp-unpause-tasks
               configMap:
                 name: mcp-unpause-tasks-configmap

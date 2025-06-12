@@ -13,3 +13,15 @@ spec:
   defaultVolumesToRestic: true
   storageLocation: {{ oadp_storage_backup_location }} 
   ttl: {{ oadp_dpa_backup_ttl | default('720h0m0s', true) }}
+{% if excluded_cluster_resources_list is defined and excluded_cluster_resources_list | default([], true) | length > 0 %}
+  excludedClusterScopedResources:
+      {{ excluded_cluster_resources_list | to_nice_yaml | indent(6, false) }}
+{% endif %}
+{% if excluded_namespace_resources_list is defined and excluded_namespace_resources_list | default([], true) | length > 0 %}
+  excludedNameSpacescopedResources:
+      {{ excluded_namespace_resources_list | to_nice_yaml | indent(6, false) }}
+{% endif %}
+{% if excluded_resources_list is defined and excluded_resources_list | default([], true) | length > 0 %}
+  excludedResources:
+      {{ excluded_resources_list | to_nice_yaml | indent(6, false) }}
+{% endif %}

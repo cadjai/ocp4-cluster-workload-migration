@@ -133,7 +133,10 @@
         - not oadp_backup_ns is defined or oadp_backup_ns != oadp_restore_ns
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
-      ansible.builtin.import_tasks: tasks/process-mcp-pausing-unpausing.yml
+      ansible.builtin.include_tasks: tasks/process-mcp-pausing-unpausing.yml
+      when:
+        - pause_mcp is defined
+        - pause_mcp | bool
       vars:
         pause_mcp: 'true'
         unpause_mcp: 'false'
@@ -152,43 +155,43 @@
         add_oadp_sc_change_cm: 'true'
         restore_name: "{{ default_backup_name }}-restore"
 
-    - name: '{{ ansible_name_module }} | Process MCP unpausing cron job '
+    - name: '{{ ansible_name_module }} | Process Restore Complete state cron job '
       block:
-        - name: '{{ ansible_name_module }} | set_fact |  mcp_unpause_config_cm_name'
+        - name: '{{ ansible_name_module }} | set_fact |  restore_complete_state_config_cm_name'
           ansible.builtin.set_fact:
-            mcp_unpause_config_cm_name: 'mcp-unpause-config-configmap'
+            restore_complete_state_config_cm_name: 'restore-complete-state-config-configmap'
           when:
-            - not mcp_unpause_config_cm_name is defined or mcp_unpause_config_cm_name == ''
+            - not restore_complete_state_config_cm_name is defined or restore_complete_state_config_cm_name == ''
 
-        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_task_cm_name'
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_task_cm_name'
           ansible.builtin.set_fact:
-            mcp_unpause_task_cm_name: 'mcp-unpause-tasks-configmap'
+            restore_complete_state_task_cm_name: 'restore-complete-state-tasks-configmap'
           when:
-            - not mcp_unpause_task_cm_name is defined or mcp_unpause_task_cm_name == ''
+            - not restore_complete_state_task_cm_name is defined or restore_complete_state_task_cm_name == ''
 
-        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_playbook_cm_name'
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_playbook_cm_name'
           ansible.builtin.set_fact:
-            mcp_unpause_playbook_cm_name: 'mcp-unpause-playbook-configmap'
+            restore_complete_state_playbook_cm_name: 'restore-complete-state-playbook-configmap'
           when:
-            - not mcp_unpause_playbook_cm_name is defined or mcp_unpause_playbook_cm_name == ''
+            - not restore_complete_state_playbook_cm_name is defined or restore_complete_state_playbook_cm_name == ''
 
-        - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_task_file'
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_task_file'
           ansible.builtin.set_fact:
-            mcp_unpause_task_file: 'tasks/process-mcp-pausing-unpausing.yml'
+            restore_complete_state_task_file: 'tasks/restore-crs-state.yml'
           when:
-            - not mcp_unpause_task_file is defined or mcp_unpause_task_file == ''
-
-        - name: '{{ ansible_name_module }} | set_fact | restore_crs_state_task_file'
-          ansible.builtin.set_fact:
-            restore_crs_state_task_file: 'tasks/restore-crs-state.yml'
-          when:
-            - not restore_crs_state_task_file is defined or restore_crs_state_task_file == ''
+            - not restore_complete_state_task_file is defined or restore_complete_state_task_file == ''
 
         - name: '{{ ansible_name_module }} | set_fact | mcp_unpause_playbook_file'
           ansible.builtin.set_fact:
-            mcp_unpause_playbook_file: 'files/unpause-mcps.yml'
+            mcp_unpause_task_file: 'tasks/process-mcp-pausing-unpausing.yml'
           when:
             - not mcp_unpause_playbook_file is defined or mcp_unpause_playbook_file == ''
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_complete_state_playbook_file'
+          ansible.builtin.set_fact:
+            restore_complete_state_playbook_file: 'files/restore-complete-state.yml'
+          when:
+            - not restore_complete_state_playbook_file is defined or restore_complete_state_playbook_file == ''
 
         - name: '{{ ansible_name_module }} | set_fact | staging_dir_in_pod'
           ansible.builtin.set_fact:
@@ -196,6 +199,15 @@
           when:
             - not staging_dir_in_pod is defined or staging_dir_in_pod == ''
 
-        - name: '{{ ansible_name_module }} | import_tasks | Import MCP Unpause cronjob tasks'
-          ansible.builtin.import_tasks: tasks/create-mcp-unpause-cronjob-resources.yml
+        - name: '{{ ansible_name_module }} | set_fact | ocp_cli_path_in_pod'
+          ansible.builtin.set_fact:
+            ocp_cli_path_in_pod: '/usr/bin/oc'
+          when:
+            - not ocp_cli_path_in_pod is defined or ocp_cli_path_in_pod == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import Restore complete state cronjob tasks'
+          ansible.builtin.import_tasks: tasks/create-restore-complete-state-cronjob-resources.yml 
+          vars:
+            unpause_mcp: 'true'
+            backup_name: '{{ default_backup_name }}'
 

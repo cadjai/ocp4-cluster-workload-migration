@@ -13,6 +13,10 @@ spec:
   itemOperationTimeout: 4h0m0s
   backupName: {{ backup_name }} 
   includedNamespaces: []
+{% if excluded_resources_list is defined and excluded_resources_list | default([], true) | length > 0 %}
+  excludedResources:
+      {{ excluded_resources_list | to_nice_yaml | indent(6, false) }}
+{% else %}
   excludedResources:
     - nodes
     - events
@@ -23,4 +27,5 @@ spec:
     - csinodes.storage.k8s.io
     - volumeattachments.storage.k8s.io
     - backuprepositories.velero.io
+{% endif %}
   restorePVs: true

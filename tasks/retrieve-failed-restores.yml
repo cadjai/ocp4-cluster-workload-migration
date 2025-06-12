@@ -1,0 +1,35 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp restore to process schedule for if none was provided'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get restore.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Failed", "PartiallyFailed"])) | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s 
+  register: failed_oadp_restore_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all restore list output '
+  ansible.builtin.debug:
+    msg: "{{ failed_oadp_restore_out.stdout | from_json }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+  ansible.builtin.set_fact:
+    failed_oadp_restore_list: '{{ failed_oadp_restore_out.stdout | from_json }}'
+  when:
+    - failed_oadp_restore_out is defined
+    - failed_oadp_restore_out.rc is defined
+    - failed_oadp_restore_out.rc == 0 
+    - failed_oadp_restore_out.stdout_lines is defined
+    - failed_oadp_restore_out.stdout_lines  | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all restore list output '
+  ansible.builtin.debug:
+    var: failed_oadp_restore_list 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp restore to process schedule for if none was provided'
+  ansible.builtin.shell: |
+    alias velero='{{ openshift_cli }} -n  {{ oadp_restore_ns }} exec deployment/velero -c velero -i -- ./velero' 
+    velero restore logs {{ item.name }} --insecure-skip-tls-verify=true >  {{ staging_dir | d('/tmp', true) }}/velero-restore-details-{{ item.name }}.txt 
+    velero restore logs {{ item.name }} --insecure-skip-tls-verify=true | grep -i error >  {{ staging_dir | d('/tmp', true) }}/velero-restore-detail-errors-{{ item.name }}.txt
+  loop: "{{ failed_oadp_restore_list }}"
+  ignore_errors: true
+  register: all_failed_restores_processed
+

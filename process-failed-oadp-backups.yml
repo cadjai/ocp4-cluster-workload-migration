@@ -1,0 +1,40 @@
+- name: ' Konductor | Provision UPI Infra | process-failed-oadp-backups.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Process failed backup"
+    ansible_name_module: " Post Cluster Installation | Configure Cluster application backup Service | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | ensure required variables are provided '
+      assert:
+        that:
+          - oadp_backup_ns is defined and oadp_backup_ns != ''
+        msg: "the oadp_backup_ns must be set to a valid namespace name where the backups are located "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP schedule CR processing tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-failed-backups.yml
+

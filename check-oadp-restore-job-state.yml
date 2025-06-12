@@ -97,4 +97,4 @@
           ansible.builtin.import_tasks: tasks/create-restore-complete-state-cronjob-resources.yml
           vars:
             unpause_mcp: 'false'
-            backup_name: '{{ default_restore_name }}'
+            backup_name: '{{ default_backup_name }}'

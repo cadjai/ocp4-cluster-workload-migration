@@ -114,6 +114,13 @@ excluded_resources_list:
   - machineautoscaler.autoscaling.openshift.io
   - machineautoscalers.autoscaling.openshift.io
   - configurationpolicies.policy.open-cluster-management.io
+  - clusterrolebindings.authorization.openshift.io
+  - clusterroles.authorization.openshift.io
+  - clusterroles.rbac.authorization.k8s.io
+  - OAuthClientAuthorization.oauth.openshift.io
+  - ingressclasses.networking.k8s.io
+  - clusterrolebindings.rbac.authorization.k8s.io
+  - clusterserviceversions.operators.coreos.com
 apply_oadp_exclusion_label: 'true'
 apply_oadp_exclusion_bsl_label: 'false'
 remove_oadp_exclusion_label: 'false'
@@ -137,5 +144,5 @@ oadp_exclusion_special_objects_list: [] ### list of additional objects to exclud
 oadp_restore_select_filter_simple: 'select([.status.phase] | inside(["Completed"]))'
 oadp_restore_select_filter_complex: 'select([.status.phase] | inside(["Completed"])) | select(.metadata.name | contains("05022025"))'
 oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_simple }}'
-use_oadp_complex_select_filter: 'true'
+use_oadp_complex_select_filter: 'false'
 backups_to_exclude_from_restore: []
