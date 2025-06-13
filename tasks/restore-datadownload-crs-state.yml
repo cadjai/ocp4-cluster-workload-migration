@@ -1,0 +1,130 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set mark the datadownload job incomplete as default value'
+  ansible.builtin.set_fact:
+    datadownload_job_completed: 'false'
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers | wc -l 
+  register: oadp_datadownload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of OADP Backup DataDownload CRs is:  {{ oadp_datadownload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | accepted oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Accepted"]))' \
+  register: accepted_oadp_datadownload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Accepted oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of Accepted OADP Backup DataDownload CRs is:  {{ accepted_oadp_datadownload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | prepared oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Prepared"]))' \
+  register: prepared_oadp_datadownload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Prepared oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of Accepted OADP Backup DataDownload CRs is:  {{ prepared_oadp_datadownload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | Canceled oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Canceled"]))' \
+  register: canceled_oadp_datadownload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Canceled oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of Canceled OADP Backup DataDownload CRs is:  {{ canceled_oadp_datadownload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | Canceling oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Canceling"]))' \
+  register: canceling_oadp_datadownload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Canceling oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of Canceling OADP Backup DataDownload CRs is:  {{ canceling_oadp_datadownload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | unprocessed oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | jq -r '.items[] | select(has("status") | not )' | jq -s length 
+  register: unprocessed_oadp_datadownload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print unprocessed oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of unprocessed OADP Backup DataDownload CRs is: {{ unprocessed_oadp_datadownload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | processed oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Completed", "Failed", "Cancelled"]))' \
+       | jq -s length 
+  register: processed_oadp_datadownload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print processed oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of processed OADP Backup DataDownload CRs is:  {{ processed_oadp_datadownload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | inprogress oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["InProgress"]))' \ 
+      | jq -s length 
+  register: inprogress_oadp_datadownload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print inprogress oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of inprogress OADP Backup DataDownload CRs is:  {{ inprogress_oadp_datadownload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | completed oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["Completed"]))' \ 
+      | jq -s length 
+  register: completed_oadp_datadownload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print completed oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of completed OADP Backup DataDownload CRs is: {{ completed_oadp_datadownload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | failed oadp datadownload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get datadownload.velero.io -n {{ oadp_restore_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Failed"]))' \
+       | jq -s length 
+  register: failed_oadp_datadownload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed oadp datadownload count output '
+  ansible.builtin.debug:
+    msg: "The count of failed OADP Backup DataDownload CRs is: {{ failed_oadp_datadownload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set mark the datadownload job complete in no datadownload CR is inprogress and there is no unprocessed datadownload CR'
+  ansible.builtin.set_fact:
+    datadownload_job_completed: 'true'
+  when:
+    - unprocessed_oadp_datadownload_out.stdout | int == 0
+    - inprogress_oadp_datadownload_out.stdout | int == 0
+    - canceling_oadp_datadownload_count_out | int == 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp datadownload completion state output '
+  ansible.builtin.debug:
+    msg: "The OADP Backup DataDownload job completion state is: {{ datadownload_job_completed }}" 
+    verbosity: 2
+

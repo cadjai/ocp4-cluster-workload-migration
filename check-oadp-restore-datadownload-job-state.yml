@@ -1,0 +1,57 @@
+- name: ' Konductor | Provision UPI Infra | check-oadp-restore-datadownload-job-state.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "check OADP Restore job Process completion state "
+    ansible_name_module: " Post Cluster Installation | Configure Cluster application restore Service | {{ module }}"
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | ensure required variables are provided '
+      assert:
+        that:
+          - oadp_restore_ns is defined and oadp_restore_ns != ''
+        msg: "the oadp_restore_ns must be set to a valid namespace name where the backups are located "
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out- name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP restore DataDownload job state tasks'
+      ansible.builtin.import_tasks: tasks/restore-datadownload-crs-state.yml 
+

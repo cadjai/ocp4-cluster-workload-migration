@@ -20,7 +20,7 @@
 
     - name: '{{ ansible_name_module }} | Retrieve restore object info'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get Restore.velero.io --no-headers -n {{ restore_src_namespace }} | awk '{print $1}' 
+        {{ openshift_cli }} get Restore.velero.io --no-headers -n {{ restore_src_namespace }} | awk '{print $1}'
       register: restore_cr_retrieved 
 
     - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print  restore cr output '
@@ -36,7 +36,7 @@
 
     - name: '{{ ansible_name_module }} | Retrieve restore object info'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get Restore.velero.io {{ restore_cr_retrieved.stdout_lines[0] }} -n {{ restore_src_namespace }}  -o jsonpath='{.status}{"\n"}'  
+        {{ openshift_cli }} get Restore.velero.io {{ restore_cr_retrieved.stdout_lines[0] }} -n {{ restore_src_namespace }}  -o jsonpath='{.status}{"\n"}'
       when:
         - restore_cr_retrieved is defined
         - restore_cr_retrieved.rc is defined
@@ -52,7 +52,7 @@
 
     - name: '{{ ansible_name_module }} | Retrieve velero pod phase '
       ansible.builtin.shell: >
-        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}'  
+        {{ openshift_cli }} get pod {{ velero_po_retrieved.stdout }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}'
       when:
         - velero_po_retrieved is defined
         - velero_po_retrieved.rc is defined
@@ -103,14 +103,15 @@
         - velero_po_errors_retrieved.rc is defined
         - velero_po_errors_retrieved.rc == 0
         - velero_po_errors_retrieved.stdout is defined
+
     - name: '{{ ansible_name_module }} | Retrieve DataDownload info'
       ansible.builtin.shell: >
-        {{ openshift_cli }} get datadownload --no-headers -n {{ restore_src_namespace }} | awk '{print $1}' 
+        {{ openshift_cli }} get datadownload.velero.io --no-headers -n {{ restore_src_namespace }} | awk '{print $1}' 
       register: ddwn_list_retrieved 
 
     - name: '{{ ansible_name_module }} | Retrieve DataDownload status info'
       ansible.builtin.command: >
-        {{ openshift_cli }} get datadownload {{ item }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}' 
+        {{ openshift_cli }} get datadownload.velero.io {{ item }} -n {{ restore_src_namespace }}  -ojsonpath='{.status.phase}{"\n"}' 
       loop: "{{ ddwn_list_retrieved.stdout_lines }}"
       when:
         - ddwn_list_retrieved is defined

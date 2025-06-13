@@ -1,0 +1,130 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set mark the dataupload job incomplete as default value'
+  ansible.builtin.set_fact:
+    dataupload_job_completed: 'false'
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers | wc -l 
+  register: oadp_dataupload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of OADP Backup DataUpload CRs is:  {{ oadp_dataupload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | accepted oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Accepted"]))' \
+  register: accepted_oadp_dataupload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Accepted oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of Accepted OADP Backup DataUpload CRs is:  {{ accepted_oadp_dataupload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | prepared oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Prepared"]))' \
+  register: prepared_oadp_dataupload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Prepared oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of Accepted OADP Backup DataUpload CRs is:  {{ prepared_oadp_dataupload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | Canceled oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Canceled"]))' \
+  register: canceled_oadp_dataupload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Canceled oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of Canceled OADP Backup DataUpload CRs is:  {{ canceled_oadp_dataupload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | Canceling oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Canceling"]))' \
+  register: canceling_oadp_dataupload_count_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Canceling oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of Canceling OADP Backup DataUpload CRs is:  {{ canceling_oadp_dataupload_count_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | unprocessed oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | jq -r '.items[] | select(has("status") | not )' | jq -s length 
+  register: unprocessed_oadp_dataupload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print unprocessed oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of unprocessed OADP Backup DataUpload CRs is: {{ unprocessed_oadp_dataupload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | processed oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Completed", "Failed", "Cancelled"]))' \
+       | jq -s length 
+  register: processed_oadp_dataupload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print processed oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of processed OADP Backup DataUpload CRs is:  {{ processed_oadp_dataupload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | inprogress oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["InProgress"]))' \ 
+      | jq -s length 
+  register: inprogress_oadp_dataupload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print inprogress oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of inprogress OADP Backup DataUpload CRs is:  {{ inprogress_oadp_dataupload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | completed oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+      jq -r '.items[] | select([.status.phase] | inside(["Completed"]))' \ 
+      | jq -s length 
+  register: completed_oadp_dataupload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print completed oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of completed OADP Backup DataUpload CRs is: {{ completed_oadp_dataupload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | failed oadp dataupload count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers -o json | \
+       jq -r '.items[] | select([.status.phase] | inside(["Failed"]))' \
+       | jq -s length 
+  register: failed_oadp_dataupload_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print failed oadp dataupload count output '
+  ansible.builtin.debug:
+    msg: "The count of failed OADP Backup DataUpload CRs is: {{ failed_oadp_dataupload_out.stdout }}" 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set mark the dataupload job complete in no dataupload CR is inprogress and there is no unprocessed dataupload CR'
+  ansible.builtin.set_fact:
+    dataupload_job_completed: 'true'
+  when:
+    - unprocessed_oadp_dataupload_out.stdout | int == 0
+    - inprogress_oadp_dataupload_out.stdout | int == 0
+    - canceling_oadp_dataupload_count_out | == 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp dataupload completion state output '
+  ansible.builtin.debug:
+    msg: "The OADP Backup DataUpload job completion state is: {{ dataupload_job_completed }}" 
+    verbosity: 2
+

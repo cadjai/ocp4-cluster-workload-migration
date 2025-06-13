@@ -202,11 +202,32 @@
     var: backups_to_restore 
     verbosity: 2
 
+### Retrieve the list of DataUpload associated to the list of baclup to ensure there are things to restore
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup dataupload to process if none was provided'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.generateName | rtrimstr("-")' | uniq 
+  register: dus_to_restore_raw_out
+
+- name: '{{ ansible_name_module }} | set_fact | set dus_to_restore in array format'
+  ansible.builtin.set_fact:
+    dus_to_restore: '{{ dus_to_restore_raw_out.stdout_lines | list }}'
+  when:
+    - dus_to_restore_raw_out is defined 
+    - dus_to_restore_raw_out.stdout_lines is defined 
+    - dus_to_restore_raw_out.stdout_lines > 0 
+
 - name: '{{ ansible_name_module }} | Configure OADP Restore  '
   when:
     - add_restore is defined 
     - add_restore | bool 
   block:
+    - name: '{{ ansible_name_module }} | Assert that there are dataupload for the backup to restore '
+      assert:
+        that:
+          - dus_to_restore is defined 
+          - dus_to_restore | length > 0 
+        msg: " the backup to restore need to have associated dataupload in order to be restored "
+
     - name: '{{ ansible_name_module }} | Retrieve velero info'
       ansible.builtin.shell: >
         {{ openshift_cli }} get pod --no-headers -n {{ oadp_restore_ns }} | grep velero | awk '{print $1}'
@@ -248,6 +269,7 @@
       when:
         - process_backup_per_namespace is defined
         - process_backup_per_namespace | bool
+        - backup_name in dus_to_restore
       register: all_restore_processed
 
         ### Porcess restore for all namespaces '
