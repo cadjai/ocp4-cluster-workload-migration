@@ -1,0 +1,114 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ src_oadp_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ src_oadp_cluster_console_url }}:{{ src_oadp_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster ONS retrieval tasks'
+  ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespacelist in array format output '
+  ansible.builtin.debug:
+    var: namespace_list_yaml
+    verbosity: 2
+  when:
+    - namespace_list_yaml is defined
+    - namespace_list_yaml !=''
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -A -ojson | jq -r '.items[] | select([.status.phase] | inside(["Bound"])) | {"namespace": .metadata.namespace, "name": .metadata.name, "volume": .spec.volumeName}' | jq -s 
+  register: bound_pvcs
+
+- name: '{{ ansible_name_module }} | set_fact | set bound_pvcs_list in array format'
+  ansible.builtin.set_fact:
+    bound_pvcs_list: '{{ bound_pvcs.stdout  | from_json | list }}'
+  when:
+    - bound_pvcs is defined
+    - bound_pvcs.stdout_lines is defined
+    - bound_pvcs.stdout_lines | length > 0 
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs in cluster namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -A -ojson | jq -r '.items[] | select([.status.phase] | inside(["Bound"])) | .metadata.namespace' | uniq 
+  register: bound_pvcs_namespaces
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs filtered namespaces in cluster namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -A -ojson | jq -r '.items[] | select([.status.phase] | inside(["Bound"])) | .metadata.namespace' | uniq  | egrep -vi "{{ excluded_ns | join('|') }}" 
+  register: bound_pvcs_namespaces_filtered
+
+- name: '{{ ansible_name_module }} | set_fact | set bound_pvcs_namespaces_list in array format'
+  ansible.builtin.set_fact:
+    bound_pvcs_namespaces_list: '{{ bound_pvcs_namespaces.stdout_lines | list }}'
+  when:
+    - bound_pvcs_namespaces is defined
+    - bound_pvcs_namespaces.rc is defined
+    - bound_pvcs_namespaces.rc == 0
+    - bound_pvcs_namespaces.stdout_lines is defined
+    - bound_pvcs_namespaces.stdout | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | set filtered_bound_pvcs_namespaces_list in array format'
+  ansible.builtin.set_fact:
+    filtered_bound_pvcs_namespaces_list: '{{ bound_pvcs_namespaces_filtered.stdout_lines | list }}'
+  when:
+    - bound_pvcs_namespaces_filtered is defined
+    - bound_pvcs_namespaces_filtered.stdout_lines is defined
+    - bound_pvcs_namespaces_filtered.stdout_lines | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print bound pvc namespacelist output '
+  ansible.builtin.debug:
+    msg: "The list of namespaces with  bound pvcs is : {{ bound_pvcs_namespaces_list }}"
+    verbosity: 2
+  when:
+    - bound_pvcs_namespaces_list is defined
+    - bound_pvcs_namespaces_list | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered bound pvc namespacelist output '
+  ansible.builtin.debug:
+    msg: "The list of filtered namespaces with  bound pvcs is : {{ filtered_bound_pvcs_namespaces_list }}"
+    verbosity: 2
+  when:
+    - filtered_bound_pvcs_namespaces_list is defined
+    - filtered_bound_pvcs_namespaces_list | length > 0 
+
+- name: '{{ ansible_name_module }} | set_fact | set namespace_with_pvcs in array format'
+  ansible.builtin.set_fact:
+    namespace_with_pvcs_yaml: '[{{ bound_pvcs_namespaces_list  | map("to_json") | join(", ") }}]'
+  when:
+    - bound_pvcs_namespaces_list is defined
+    - bound_pvcs_namespaces_list | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | set namespace_with_pvcs in array format'
+  ansible.builtin.set_fact:
+    filtered_namespace_with_pvcs_yaml: '[{{ filtered_bound_pvcs_namespaces_list  | map("to_json") | join(", ") }}]'
+  when:
+    - filtered_bound_pvcs_namespaces_list is defined
+    - filtered_bound_pvcs_namespaces_list | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace_with_pvcs_yaml in array format output '
+  ansible.builtin.debug:
+    var: namespace_with_pvcs_yaml 
+    verbosity: 2
+  when:
+    - namespace_with_pvcs_yaml is defined
+    - namespace_with_pvcs_yaml | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print filtered_namespace_with_pvcs_yaml in array format output '
+  ansible.builtin.debug:
+    var: filtered_namespace_with_pvcs_yaml 
+    verbosity: 2
+  when:
+    - filtered_namespace_with_pvcs_yaml is defined
+    - filtered_namespace_with_pvcs_yaml | length > 0 
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ src_oadp_cluster_console_url }}:{{ src_oadp_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

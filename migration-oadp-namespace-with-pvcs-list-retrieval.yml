@@ -1,0 +1,76 @@
+- name: ' Konductor | Provision UPI Infra | migration-oadp-namespace-with-pvcs-list-retrieval.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/oadp-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Retieve Namespace Info"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - src_oadp_cluster_console_url is defined
+              - src_oadp_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API token  is defined'
+          ansible.builtin.assert:
+            that:
+              - src_oadp_cluster_token is defined
+              - src_oadp_cluster_token != ''
+            msg: "The Source cluster logintoken is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            src_oadp_cluster_console_port: '6443'
+          when:
+            - not src_oadp_cluster_console_port is defined or src_oadp_cluster_console_port == ''
+
+        - name: '{{ ansible_name_module }} | translate cluster login info'
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+          block:
+            - name: '{{ ansible_name_module }} | set_fact | set cluster login info  '
+              ansible.builtin.set_fact:
+                ocp_cluster_console_url: "{{ src_oadp_cluster_console_url }}"
+                ocp_cluster_token: "{{ src_oadp_cluster_token }}"
+                ocp_cluster_console_port: "{{ src_oadp_cluster_console_port }}"
+
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
+
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace List retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-namespace-with-pvcs-list-from-oadp-source-cluster.yml
+      when:
+        - retrieve_nslist is defined
+        - retrieve_nslist | bool
+
+
+

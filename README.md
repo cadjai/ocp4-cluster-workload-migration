@@ -1,9 +1,9 @@
 # workload-migration-between-clusters-on-OpenShift-Container-Platform-4
 
 This repository provides utility playbook to help with an automated way to perform workload migration between two OpenShift Container 4.x clusters.  
-Some of the example use case could be that you want to do a cluster wide backup and then restore to a similar cluster version or to a newer cluster, or you are using a Blue/Green cluster deployment approach and want to migrate all workloads running on the exiting green cluster to the new blue cluster so that traffic can be redirected to that cluster or you just want to take the backup and keep for situations where you might need to restore the whole cluster. 
+Some example use case could be that you want to do a cluster wide backup and then restore to a similar cluster version or to a newer cluster, or you are using a Blue/Green cluster deployment approach and want to migrate all workloads running on the exiting green cluster to the new blue cluster so that traffic can be redirected to that cluster or you just want to take the backup and keep for situations where you might need to restore the whole cluster. 
 
-There are several ways to go about this on OpenShift but given that Red Hat provides a few supported apporaches we will first focus on those and perhaps later add more playbook to use the Kubernetes CSI snapshot approach wich is a little more involved that the first two apporached supported by Red Hat, and finally add a few more like using volume snapshots and reattachment approach if the platform the clusters were deployed to support that apporach. 
+There are several ways to go about this on OpenShift but given that Red Hat provides a few supported apporaches we will first focus on those and perhaps later add more playbooks to use the Kubernetes CSI snapshot approach wich is a little more involved that the first two apporached supported by Red Hat, and finally add a few more like using volume snapshots and reattachment approach if the platform the clusters were deployed to support that apporach. 
 
 The two approaches to be used here are the Migration Toolkit for Containers (MTC) and the OpenShift API for Data Protection (OADP). 
 Refer to the official documentaion for more information on [MTC](https://docs.openshift.com/container-platform/4.14/migration_toolkit_for_containers/about-mtc.html).
@@ -26,6 +26,7 @@ There are sereval ways to perform an OADP backup. For example if you have RHACM 
 Similarly an OADP restore can be done using various approaches like using a playbook to run it, using an ACM policy to trigger the restore or manually applying the OADP restore related CRs to the destination cluster. 
 Various helper playbooks are  provided here to help check prerequisites on the destination cluster as well as configure any necessary objects required for a successful restore like ensuring that snapshot class exist as well as storage classes and any other required kunernetes manifests. 
 
+Another simple approach might be to download all existing persistence objects (PVs and PVCs) in the current cluster and then reapply them in the new cluster. This apporach even though simplistic would only work if the object backing those persistent objects reside in the same region and availability zone and can easily be rebound/attached by the nodes in the new cluster. If you would rather follow that at your own risk there are playbooks that will help you download the persistence related manifests.
 
 ## MTC Cluster Workload Migration Flow
 A quick recap:
@@ -65,7 +66,7 @@ A quick recap:
 
 ### OADP Cluster Workload Backup 
 To backup the cluster workload using OADP you need to ensure that the source cluster meets the requirements for an OADP backup adnd use the provided playbooks to perform the backup as follows:
-1. Ensure you have source cluster meets all the prequisites before getting started with the OADP backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
+1. Ensure your source cluster meets all the prequisites before getting started with the OADP backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
 ```
@@ -118,6 +119,31 @@ ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-oadp-migration-res
 Note that for each of the playbook steps above you need to ensure the appropriate variables are provided either through the CLI using the -e option for the `ansible-playbook` command or by updating the `oadp-migration.yml` variable file.
 
 
+## Raw Persistence manifests Cluster Workload Migration Flow
+In this flow, the playbook will identify all bound persistent volume claims and related volumes and download the manifests and perform metadata cleanup of the downloaded manifests so that they can readily be applied to the new cluster. Note that there is no garantee that the baking volumes can be easily attached and bound by nodes in the new cluster. 
+
+### Raw Persistence manifests Workload Backup 
+To backup the cluster workload using using the Raw persistence manifest download,  you need to ensure that the source cluster meets the requirements for an manifests  backup and use the provided playbooks to perform the backup as follows:
+1. Ensure your  source cluster meets all the prequisites before getting started with the raw manifests backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
+```
+ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
+```
+2. Review the output of the previous step and ensure any necessary steps are taken to remediate any failures.
+3. Ensure you have an updated list of targeted namespaces. If you have captured the list some ago ago ensure it is still accurate as an incorrect list could cause the process to fail. Use the provided playbook (`migration-targeted-namespace-list-retrieval.yml`) to retrieve the updated list of targeted namespaces from the source cluster.
+```
+ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retrieval.yml
+```
+4. Perform the raw backup by running the provided `post-deploy-configure-oadp-migration-backup.yml` playbook. Run the playbook as follows:
+```
+ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-raw-pvc-download-from-source-cluster.yml 
+```
+
+### Raw Persistence manifests Cluster Workload Restore
+To restore the workload to the destination cluster, apply all of the downlaoded manifests to the new cluster (ensuring the PVs are applied first and the the PVCs) using the oc command like `oc apply -f <pvs-dir>` and `oc apply -f <pvc-dir`. Validate that the objects were properly applied and that the backing volumes were properly mounted by the nodes in the new cluster. Also verify and ensure that the nodes on which the volumes were attached are also the nodes on which the workloads that need those volumes are scheduled on.   
+
+
+
+
 Playbook Variables
 --------------
 
@@ -125,6 +151,7 @@ Playbook Variables
 |---------------------------|---------------------------------|
 |  MTC                      |   mtc-migration.yml             |
 |  OADP                     |   oadp-migration.yml            |
+|  Raw                      |   oadp-migration.yml            |
 
 
 Update the appropriate file for you migration approach and ensure you have all variables set before begenning the process. 

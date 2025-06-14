@@ -3,6 +3,46 @@
   ansible.builtin.set_fact:
     dataupload_job_completed: 'false'
 
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | bound pvcs in namespace count '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ item }} --no-headers | egrep -i "bound" | wc -l
+  ignore_errors: 'true'
+  loop: "{{ namespaces_to_backup | default([], true) }}"
+  when:
+    - namespaces_to_backup is defined
+    - namespaces_to_backup | length > 0
+  register: namespaces_bound_pvcs_count
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespace bound pvc count output '
+  ansible.builtin.debug:
+    msg: "The number of namespaces in bound pvc count is : {{ namespaces_bound_pvcs_count.results | length }}"
+    verbosity: 2
+  when:
+    - namespaces_bound_pvcs_count is defined
+    - namespaces_bound_pvcs_count.results is defined
+    - namespaces_bound_pvcs_count.results | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | namespaces_to_backup_targeted '
+  ansible.builtin.set_fact:
+    namespace_with_pvcs: "{{ namespace_with_pvcs | default([], true) + [item.item] }}"
+  loop: "{{ namespaces_bound_pvcs_count.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - namespaces_bound_pvcs_count is defined
+    - namespaces_bound_pvcs_count.results is defined
+    - namespaces_bound_pvcs_count.results | length > 0
+    - item.item is defined
+    - item.stdout is defined
+    - item.stdout | int > 26
+
+- name: '{{ ansible_name_module }} | set_fact | namespace_with_pvcs unique'
+  ansible.builtin.set_fact:
+    namespace_with_pvcs: "{{ namespace_with_pvcs | unique }}"
+  when:
+    - namespace_with_pvcs is defined
+    - namespace_with_pvcs | length > 0
+
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp dataupload count '
   ansible.builtin.shell: >
     {{ openshift_cli }} get dataupload.velero.io -n {{ oadp_backup_ns }}  --no-headers | wc -l 

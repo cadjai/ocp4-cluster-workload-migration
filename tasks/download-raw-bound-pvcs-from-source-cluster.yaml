@@ -1,0 +1,135 @@
+---
+- name: '{{ ansible_name_module }} | import_tasks | Import Source Cluster Namespace List retrievl additional tasks'
+  ansible.builtin.import_tasks: tasks/retrieve-namespace-with-pvcs-list-from-oadp-source-cluster.yml
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ item }}  -o yaml --show-managed-fields=false >  {{ pvc_backup_staging_dir }}/{{ backup_name }}-{{ item }}-pvc.yaml
+  loop: "{{ filtered_namespace_with_pvcs_yaml }}"
+  register: bound_pvcs_downloaded
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print bound_pvcs_downloaded.results output '
+  ansible.builtin.debug:
+    var: item 
+    verbosity: 2
+  loop: "{{ bound_pvcs_downloaded.results }}"
+  when:
+    - bound_pvcs_downloaded.results is defined
+    - bound_pvcs_downloaded.results | length > 0 
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ pvc_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ bound_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    pvc_file_path: "{{ pvc_backup_staging_dir }}/{{ backup_name }}-{{ filtered_namespace_with_pvcs_yaml[key_cnt] }}-pvc.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ pvc_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ bound_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    pvc_file_path: "{{ pvc_backup_staging_dir }}/{{ backup_name }}-{{ filtered_namespace_with_pvcs_yaml[key_cnt] }}-pvc.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ pvc_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ bound_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    pvc_file_path: "{{ pvc_backup_staging_dir }}/{{ backup_name }}-{{ filtered_namespace_with_pvcs_yaml[key_cnt] }}-pvc.yaml"
+
+- name:  '{{ ansible_name_module }} | Download PV is applicable'
+  when:
+    - include_pvs is defined
+    - include_pvs | bool 
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | pvc_backup_staging_dir '
+      ansible.builtin.set_fact:
+        pv_backup_staging_dir: "{{ pvc_backup_staging_dir }}/pvs"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the pv file download stagin dir exist '
+      ansible.builtin.file:
+        path: "{{ pv_backup_staging_dir }}"
+        state: directory
+        mode: 0777
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvs in cluster '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pv {{ item.volume }}  -o yaml --show-managed-fields=false >  {{ pv_backup_staging_dir }}/{{ backup_name }}-{{ item.volume }}-pv.yaml
+      loop: "{{ bound_pvcs_list }}"
+      when:
+        - item.name is defined
+        - item.namespace is defined
+        - item.volume is defined
+        - item.namespace in filtered_namespace_with_pvcs_yaml
+      register: bound_pvs_downloaded
+
+    - name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+      ansible.builtin.lineinfile:
+        path: "{{ pv_file_path }}"
+        regexp: "creationTimestamp:"
+        state: absent
+      loop: "{{ bound_pvs_downloaded.results }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item is defined
+        - item.rc is defined
+        - item.rc == 0 
+      vars:
+        pv_file_path: "{{ pv_backup_staging_dir }}/{{ backup_name }}-{{ bound_pvcs_list[key_cnt].volume }}-pv.yaml"
+    
+    - name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+      ansible.builtin.lineinfile:
+        path: "{{ pv_file_path }}"
+        regexp: "resourceVersion: "
+        state: absent
+      loop: "{{ bound_pvs_downloaded.results }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item is defined
+        - item.rc is defined
+        - item.rc == 0 
+      vars:
+        pv_file_path: "{{ pv_backup_staging_dir }}/{{ backup_name }}-{{ bound_pvcs_list[key_cnt].volume }}-pv.yaml"
+    
+    - name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+      ansible.builtin.lineinfile:
+        path: "{{ pv_file_path }}"
+        regexp: "uid: "
+        state: absent
+      loop: "{{ bound_pvs_downloaded.results }}"
+      loop_control:
+        index_var: key_cnt
+      when:
+        - item is defined
+        - item.rc is defined
+        - item.rc == 0 
+      vars:
+        pv_file_path: "{{ pv_backup_staging_dir }}/{{ backup_name }}-{{ bound_pvcs_list[key_cnt].volume }}-pv.yaml"
+    

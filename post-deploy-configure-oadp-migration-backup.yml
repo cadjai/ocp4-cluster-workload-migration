@@ -82,7 +82,10 @@
         backup_name_prefix_strg: "{{ (backup_name_prefix + '-') if backup_name_prefix is defined and backup_name_prefix != '' else '' }}"
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
-      ansible.builtin.import_tasks: tasks/process-mcp-pausing-unpausing.yml
+      ansible.builtin.include_tasks: tasks/process-mcp-pausing-unpausing.yml
+      when:
+        - pause_mcp is defined
+        - pause_mcp | bool 
       vars:
         pause_mcp: 'false'
         unpause_mcp: 'false'

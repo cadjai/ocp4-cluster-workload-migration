@@ -33,11 +33,11 @@
           when:
             - not restore_dest_cluster_console_port is defined or restore_dest_cluster_console_port == ''
 
-        - name: '{{ ansible_name_module }} | assert | the backup_name is defined'
+        - name: '{{ ansible_name_module }} | assert | the default_backup_name is defined'
           ansible.builtin.assert:
             that:
-              - backup_name is defined and backup_name != ""
-            msg: " the backup_name must be set and valid "
+              - default_backup_name is defined and default_backup_name != ""
+            msg: " the default_backup_name must be set and valid "
 
         - name: '{{ ansible_name_module }} | assert | the restore namespace is defined'
           ansible.builtin.assert:
