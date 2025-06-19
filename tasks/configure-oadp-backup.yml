@@ -117,6 +117,23 @@
     - oadp_bsl_phase_out.stdout != ''
     - "'Available' in oadp_bsl_phase_out.stdout"
 
+- name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+  ansible.builtin.set_fact:
+    updated_namespaces_to_backup: '{{ namespaces_to_backup }}'
+
+### For OADP with CSI snapshot and data move it is best to only backup NS with bound persistence
+## So the process below will only include NS with bound PVCs. If all is needed then provide the override togggle
+- name: '{{ ansible_name_module }} | Process Namespace to include '
+  when:
+    - not force_whole_cluster_backup is defined or not force_whole_cluster_backup | bool
+  block:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source Cluster Namespace List retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-namespace-with-pvcs-list-from-oadp-source-cluster.yml
+
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_to_backup: '{{ filtered_namespace_with_pvcs_yaml }}'
+
 - name: '{{ ansible_name_module }} | Add Source cluster to MTC '
   when:
     - add_backup is defined 
@@ -146,6 +163,7 @@
           - "'Running' in velero_po_phase_retrieved.stdout" 
         msg: " the velero pod must be running before running this playbook"
 
+
     - name: '{{ ansible_name_module }} | set_fact | set backup_start_time'
       ansible.builtin.set_fact:
         backup_start_time: '{{ ansible_date_time.minute | int }}'
@@ -153,7 +171,7 @@
         ###  Porcess backup per namespace'
     - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
       ansible.builtin.include_tasks: process-backup.yml 
-      loop: "{{ namespaces_to_backup }}"
+      loop: "{{ updated_namespaces_to_backup }}"
       loop_control:
         index_var: key_cnt
       vars:
@@ -172,7 +190,7 @@
       ansible.builtin.include_tasks: process-backup.yml 
       vars:
         backup_name: "{{ default_backup_name }}"
-        namespace_list: "{{ namespaces_to_backup }}"
+        namespace_list: "{{ updated_namespaces_to_backup }}"
         add_oadp_schedule: '{{ use_oadp_schedule_cr if use_oadp_schedule_cr is defined and use_oadp_schedule_cr | bool else "false" }}'
         oadp_cron_schedule_expression: '{{ backup_start_time + 5 }} {{ ansible_date_time.hour }} {{ ansible_date_time.day}} {{ ansible_date_time.month }} {{ ansible_date_time.weekday_number }}' 
         oadp_storage_backup_location: "{{ oadp_storage_backup_location_out.stdout }}"

@@ -161,7 +161,7 @@
   when:
     - unprocessed_oadp_dataupload_out.stdout | int == 0
     - inprogress_oadp_dataupload_out.stdout | int == 0
-    - canceling_oadp_dataupload_count_out | == 0
+    - canceling_oadp_dataupload_count_out.stdout | int == 0
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print oadp dataupload completion state output '
   ansible.builtin.debug:

@@ -30,7 +30,7 @@
 
 - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | Get backup CR status '
   ansible.builtin.command: >
-    {{ openshift_cli }} get backup.velero.io "{{ backup_cr.stdout }}" -n {{ oadp_backup_ns }} -o jsonpath='{.status.phase}'
+    {{ openshift_cli }} get backup.velero.io {{ backup_name }} -n {{ oadp_backup_ns }} -o jsonpath='{.status.phase}'
   when:
     - backup_cr.rc is defined
     - backup_cr.rc == 0

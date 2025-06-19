@@ -68,9 +68,6 @@
   tasks:
     - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace List retrievl additional tasks'
       ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml
-      when:
-        - retrieve_nslist is defined
-        - retrieve_nslist | bool
 
 
 
