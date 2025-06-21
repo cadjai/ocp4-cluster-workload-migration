@@ -5,6 +5,12 @@
   when:
     - not manifest_backup_staging_dir is defined or not manifest_backup_staging_dir != ''
 
+- name: '{{ ansible_name_module }} | set_fact | roles_manifest_backup_staging_dir '
+  ansible.builtin.set_fact:
+    roles_manifest_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/roles" 
+  when:
+    - not roles_manifest_backup_staging_dir is defined or not roles_manifest_backup_staging_dir != ''
+
 - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the manifests download staging dir exist '
   ansible.builtin.file:
     path: "{{ manifest_backup_staging_dir }}"
@@ -20,7 +26,7 @@
 
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvcs in cluster '
   ansible.builtin.shell: >
-    {{ openshift_cli }} get roles,rolebindings,serviceaccounts,users,groups -n {{ item }}  -o yaml --show-managed-fields=false >  {{ manifest_backup_staging_dir }}/{{ backup_name }}-{{ item }}-usermgt.yaml
+    {{ openshift_cli }} get roles,rolebindings,serviceaccounts,users,groups -n {{ item }}  -o yaml --show-managed-fields=false >  {{roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ item }}-usermgt.yaml
   loop: "{{ raw_manifests_namespace_list }}"
   ignore_errors: true
   register: usermgt_manifests_downloaded
@@ -143,7 +149,7 @@
     - item.rc is defined
     - item.rc == 0 
   vars:
-    usermgt_manifest_file_path: "{{ manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
 
 - name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
   ansible.builtin.lineinfile:
@@ -158,7 +164,7 @@
     - item.rc is defined
     - item.rc == 0 
   vars:
-    usermgt_manifest_file_path: "{{ manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
 
 - name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
   ansible.builtin.lineinfile:
@@ -173,5 +179,5 @@
     - item.rc is defined
     - item.rc == 0 
   vars:
-    usermgt_manifest_file_path: "{{ manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
 

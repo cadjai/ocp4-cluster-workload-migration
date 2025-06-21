@@ -91,7 +91,7 @@
 
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | backuplocation CR phase'
   ansible.builtin.shell: >
-    {{ openshift_cli }} get bsl {{ oadp_storage_backup_location_out.stdout }} -n {{ oadp_backup_ns }} -ojsonpath='{.status.phase}{"\n"}' 
+    {{ openshift_cli }} get backupstoragelocation.velero.io {{ oadp_storage_backup_location_out.stdout }} -n {{ oadp_backup_ns }} -ojsonpath='{.status.phase}{"\n"}' 
   when:
     - oadp_storage_backup_location_out.stdout is defined
     - oadp_storage_backup_location_out.stdout != ''
@@ -117,11 +117,21 @@
     - oadp_bsl_phase_out.stdout != ''
     - "'Available' in oadp_bsl_phase_out.stdout"
 
+- name: '{{ ansible_name_module }} | Process Namespace to include '
+  when:
+    - force_whole_cluster_backup is defined 
+    - force_whole_cluster_backup | bool
+  block:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster NS retrieval tasks'
+      ansible.builtin.include_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml
+      when:
+        - not namespaces_to_backup is defined or namespaces_to_backup | length == 0
+
 - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
   ansible.builtin.set_fact:
-    updated_namespaces_to_backup: '{{ namespaces_to_backup }}'
+    updated_namespaces_to_backup: '{{ namespaces_to_backup if namespaces_to_backup is defined and namespaces_to_backup | length > 0 else namespace_list_yaml }}'
 
-### For OADP with CSI snapshot and data move it is best to only backup NS with bound persistence
+### For OADP with CSI snapshot and data mover it is best to only backup NS with bound persistence
 ## So the process below will only include NS with bound PVCs. If all is needed then provide the override togggle
 - name: '{{ ansible_name_module }} | Process Namespace to include '
   when:
