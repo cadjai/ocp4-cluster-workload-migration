@@ -77,7 +77,7 @@ or
 ```
 ansible-playbook --ask-vault-pass  -vvv retrieve-backup-s3-bucket-on-odf.yml
 ```
-[!NOTE]  
+[!NOTE]
 The following steps are to be performed against the targeted backup cluster.  
 2. Ensure your source cluster meets all the prequisites before getting started with the OADP backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
 ```
@@ -92,7 +92,7 @@ ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retri
 ```
 ansible-playbook --ask-vault-pass  -vvv  process-oadp-exclusion-on-source-cluster-pre-backup.yml
 ```
-[!NOTE] 
+[!NOTE]
 There is a cronjob template for this process that can be used if you are using a schedule CR with yous backup or if you are using an ACM policy that has a schedule object in order to run this on a predefined schedule before the backup cron is triggered (e.g run this 20 min before the backup is run). The cronjob has all the necessary data, objects and associted configmaps and all can easily be used to either create a new ACM policy or added as ObjectDefinition templates within the existing ACM policy you are already using for your backup.
 
 6. Perform the OADP backup by running the provided `post-deploy-configure-oadp-migration-backup.yml` playbook. Run the playbook as follows:
