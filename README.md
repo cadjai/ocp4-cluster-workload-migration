@@ -66,16 +66,10 @@ A quick recap:
 
 ### OADP Cluster Workload Backup 
 To backup the cluster workload using OADP you need to ensure that the source cluster meets the requirements for an OADP backup adnd use the provided playbooks to perform the backup as follows:
-1. Ensure your source cluster meets all the prequisites before getting started with the OADP backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
-```
-ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
-```
-2. Review the output of the previous step and ensure any necessary steps are taken to remediate any failures.
-3. Ensure you have an updated list of targeted namespaces. If you have captured the list some ago ago ensure it is still accurate as an incorrect list could cause the process to fail. Use the provided playbook (`migration-targeted-namespace-list-retrieval.yml`) to retrieve the updated list of targeted namespaces from the source cluster.
-```
-ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retrieval.yml
-```
-4. Ensure you have the storage location bucket information readily available to use. If you don't already have a bucket use the provided `provision-backup-s3-bucket-on-odf.yml` playbook to set an OBC and bucket on ODF as well and retrieve the associated information. Otherwise use the `retrieve-backup-s3-bucket-on-odf.yml` playbook to fetch the S3 bucket information from ODF. Run either of the playbooks as follows:
+
+1. Ensure you have the storage location bucket information readily available to use. If you don't already have a bucket use the provided `provision-backup-s3-bucket-on-odf.yml` playbook to create an OBC and bucket on ODF as well and retrieve the associated information. Otherwise, use the `retrieve-backup-s3-bucket-on-odf.yml` playbook to fetch the S3 bucket information from ODF. Run either of the playbooks as follows:
+[!WARNING]
+This playbook should only be run against the cluster hosting the ODF S3 not the target backup cluster. 
 ```
 ansible-playbook --ask-vault-pass  -vvv provision-backup-s3-bucket-on-odf.yml 
 ```
@@ -83,11 +77,23 @@ or
 ```
 ansible-playbook --ask-vault-pass  -vvv retrieve-backup-s3-bucket-on-odf.yml
 ```
-5. Ensure there are no objects in invalid state that can cause the backup to fail. For example invalid imagestreamsor pending PVCs can cause failures. Use the `process-oadp-exclusion-on-source-cluster-pre-backup.yml`playbook to excluse any objects in the cluster that meets that requirement. For the time being the provided only excludes unbound PVCs and imagestreams with certain error conditions but can be updated to add more resources to be excluded. Run the playbook as follows:
+[!NOTE]  
+The following steps are to be performed against the targeted backup cluster.  
+2. Ensure your source cluster meets all the prequisites before getting started with the OADP backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
+```
+ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
+```
+3. Review the output of the previous step and ensure any necessary steps are taken to remediate any failures.
+4. Optional step, If you have alist of namespace to use or if you want to make further modifications to the list retrieved by the provided playbook, then ensure you have an updated list of targeted namespaces. 
+```
+ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retrieval.yml
+```
+5. Ensure there are no objects in invalid state that can cause the backups to fail. For example invalid imagestreams or pending PVCs can cause failures. Use the `process-oadp-exclusion-on-source-cluster-pre-backup.yml`playbook to excluse any objects in the cluster that meets that requirement. For the time being the provided playbook only excludes unbound PVCs and imagestreams with certain error conditions, non running pods, complete jobs but can be updated to add more resources to be excluded. Run the playbook as follows:
 ```
 ansible-playbook --ask-vault-pass  -vvv  process-oadp-exclusion-on-source-cluster-pre-backup.yml
 ```
-Note that there is a cronjob template for this process that can be used if you are using a schedule with you backup or if you are using an ACM policy that has a schedule object in order to run this on a schedule before the backup cron is triggered (e.g run this 20 min before the backup is run). The cronjob has all the necessary data and objects associted configmaps and all can easily be used to either create a new ACM policy or addded as ObjectDefinition templates within the existing ACM policy you are already using for your backup.
+[!NOTE] 
+There is a cronjob template for this process that can be used if you are using a schedule CR with yous backup or if you are using an ACM policy that has a schedule object in order to run this on a predefined schedule before the backup cron is triggered (e.g run this 20 min before the backup is run). The cronjob has all the necessary data, objects and associted configmaps and all can easily be used to either create a new ACM policy or added as ObjectDefinition templates within the existing ACM policy you are already using for your backup.
 
 6. Perform the OADP backup by running the provided `post-deploy-configure-oadp-migration-backup.yml` playbook. Run the playbook as follows:
 ```
@@ -100,6 +106,9 @@ ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-post-backup.yml
 8. Optional steps. In the event of failures use the provided helper playbooks to perform resources cleanup. For examle if you need to cleanup the OADP deployment you can use the `undeploy-oadp-migration-application.yml`. Similarly, if you need to remove failed backup CRs you can run the `remove-failed-backup-from-source-cluster.yml` playbook.
 
 Note that to successfully run each of the playboks referenced above it is important to either update the appropriate variables either through the oadp-migration.yml variable file or by passing the variables as extra argument to the `ansible-playbook`commands.
+
+[!TIP]
+Given that OADP backup using the CSI snapshot and Data Mover only works for workloads with bound PVCs, a set of tasks has been added to do download worload related manifests for all the namespace that were not selected for backup so that if necessary one can use those manifests to recreate the workload related kubernetes object in the new cluster.
 
 
 ### OADP Cluster Workload Restore
