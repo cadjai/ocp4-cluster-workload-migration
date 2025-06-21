@@ -134,6 +134,10 @@
       ansible.builtin.set_fact:
         updated_namespaces_to_backup: '{{ filtered_namespace_with_pvcs_yaml }}'
 
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_excluded_from_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_excluded_from_backup: '{{ namespace_list_yaml | symmetric_difference(updated_namespaces_to_backup) }}'
+
 - name: '{{ ansible_name_module }} | Add Source cluster to MTC '
   when:
     - add_backup is defined 
@@ -183,6 +187,19 @@
       when:
         - process_backup_per_namespace is defined
         - process_backup_per_namespace | bool
+      register: all_backup_processed
+
+        ###  Process raw manifests backup per namespace'
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+      ansible.builtin.include_tasks: tasks/download-raw-manifests-from-source-cluster.yaml 
+      vars:
+        raw_manifests_namespace_list: "{{ updated_namespaces_excluded_from_backup }}"
+        backup_name: "{{ default_backup_name }}"
+      when:
+        - process_backup_per_namespace is defined
+        - process_backup_per_namespace | bool
+        - updated_namespaces_excluded_from_backup is defined
+        - updated_namespaces_excluded_from_backup | length > 0
       register: all_backup_processed
 
         ### Porcess backup for all namespaces '
