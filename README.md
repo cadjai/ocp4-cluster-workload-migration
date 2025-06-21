@@ -68,8 +68,8 @@ A quick recap:
 To backup the cluster workload using OADP you need to ensure that the source cluster meets the requirements for an OADP backup adnd use the provided playbooks to perform the backup as follows:
 
 1. Ensure you have the storage location bucket information readily available to use. If you don't already have a bucket use the provided `provision-backup-s3-bucket-on-odf.yml` playbook to create an OBC and bucket on ODF as well and retrieve the associated information. Otherwise, use the `retrieve-backup-s3-bucket-on-odf.yml` playbook to fetch the S3 bucket information from ODF. Run either of the playbooks as follows:
-[!WARNING]
-This playbook should only be run against the cluster hosting the ODF S3 not the target backup cluster. 
+> [!WARNING]
+> This playbook should only be run against the cluster hosting the ODF S3 not the target backup cluster. 
 ```
 ansible-playbook --ask-vault-pass  -vvv provision-backup-s3-bucket-on-odf.yml 
 ```
