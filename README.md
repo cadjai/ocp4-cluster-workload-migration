@@ -132,17 +132,17 @@ Note that for each of the playbook steps above you need to ensure the appropriat
 In this flow, the playbook will identify all bound persistent volume claims and related volumes and download the manifests and perform metadata cleanup of the downloaded manifests so that they can readily be applied to the new cluster. Note that there is no garantee that the baking volumes can be easily attached and bound by nodes in the new cluster. 
 
 ### Raw Persistence manifests Workload Backup 
-To backup the cluster workload using using the Raw persistence manifest download,  you need to ensure that the source cluster meets the requirements for an manifests  backup and use the provided playbooks to perform the backup as follows:
+To backup the cluster workload using the Raw persistence manifest download, you need to ensure that the source cluster meets the requirements for manifests backup and use the provided playbooks to perform the backup as follows:
 1. Ensure your  source cluster meets all the prequisites before getting started with the raw manifests backup. Use the provided validation playbook (`validate-source-cluster-pre-backup.yml`) to perform the validation checks as follows:
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
 ```
 2. Review the output of the previous step and ensure any necessary steps are taken to remediate any failures.
-3. Ensure you have an updated list of targeted namespaces. If you have captured the list some ago ago ensure it is still accurate as an incorrect list could cause the process to fail. Use the provided playbook (`migration-targeted-namespace-list-retrieval.yml`) to retrieve the updated list of targeted namespaces from the source cluster.
+3. Ensure you have an updated list of targeted namespaces. If you have captured the list some time ago ago, ensure it is still accurate as an incorrect list could cause the process to fail. Use the provided playbook (`migration-targeted-namespace-list-retrieval.yml`) to retrieve the updated list of targeted namespaces from the source cluster.
 ```
 ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retrieval.yml
 ```
-4. Perform the raw backup by running the provided `post-deploy-configure-oadp-migration-backup.yml` playbook. Run the playbook as follows:
+4. Perform the raw backup by running the provided `post-deploy-configure-raw-pvc-download-from-source-cluster.yml` playbook. Run the playbook as follows:
 ```
 ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-raw-pvc-download-from-source-cluster.yml 
 ```
