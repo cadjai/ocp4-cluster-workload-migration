@@ -181,3 +181,34 @@
   vars:
     usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
 
+- name: '{{ ansible_name_module }} | upload raw manifests to S3 bucket '
+  block:
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws 
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0 
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != '' 
+        msg: "The AWS CLI binary is required to upload the raw manifest to the S3 bucket "
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+
+    - name: '{{ ansible_name_module }} | command:shell | copy raw manifest directory to S3 bucket'
+      ansible.builtin.shell: >
+        {{ aws_cli }} s3 --region {{ oadp_bucket_region }} sync {{ manifest_backup_staging_dir }}/ \
+         s3://{{ oadp_s3_bucket }}/{{ oadp_backup_prefix }}/raw-manifests \
+         --endpoint-url https://{{ oadp_s3url }} --no-verify-ssl
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ oadp_bucket_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ oadp_bucket_access_secret }}"
+      register: manifests_uploaded
