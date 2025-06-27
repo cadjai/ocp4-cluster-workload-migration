@@ -88,7 +88,7 @@
   block:
     - name: '{{ ansible_name_module }} | template | Copy OperatorGroup Config to staging location'
       ansible.builtin.template:
-        src: "../cluster_post-install_day_two/templates/OperatorGroup.yml.j2"
+        src: "templates/OperatorGroup.yml.j2"
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-OperatorGroup.yml"
         force: yes
       vars:
@@ -110,7 +110,7 @@
 
     - name: '{{ ansible_name_module }} | template | Copy Operator Subscripion to staging location'
       ansible.builtin.template:
-        src: "../cluster_post-install_day_two/templates/Subscription.yml.j2"
+        src: "templates/Subscription.yml.j2"
         dest: "{{ staging_dir | d('/tmp', true) }}/{{ oadp_operator.name }}-Subscription.yml"
         force: yes
       vars:
@@ -118,8 +118,8 @@
         operator_target_namespace: "{{ oadp_operator.target_namespace }}"
         operator_deploy_namespace: "{{ oadp_operator.deploy_namespace }}"
         operator_name: "{{ oadp_operator.name }}"
-        operator_sub_channel: "{{ oadp_operator.sub_channel }}"
-        operator_csv_version: "{{ oadp_operator.sub_version }}"
+        operator_sub_channel: "{{ oadp_operator.sub_channel if oadp_operator.sub_channel is defined and oadp_operator.sub_channel != '' else  operator_pkg_info.stdout_lines[1] }}"
+        operator_csv_version: "{{ oadp_operator.sub_version if oadp_operator.sub_version is defined and oadp_operator.sub_version != '' else operator_pkg_info.stdout_lines[0] }}"
       register: op_sub_copied
 
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | deploy operator subscription'

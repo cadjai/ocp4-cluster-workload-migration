@@ -60,18 +60,6 @@
       vars:
         backup_name_prefix_strg: "{{ (backup_name_prefix + '-') if backup_name_prefix is defined and backup_name_prefix != '' else '' }}"
 
-    - name: '{{ ansible_name_module }} | set_fact | pvc_backup_staging_dir '
-      ansible.builtin.set_fact:
-        pvc_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}"
-      when:
-        - not pvc_backup_staging_dir is defined or not pvc_backup_staging_dir != ''
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the pvc file download stagin dir exist '
-      ansible.builtin.file:
-        path: "{{ pvc_backup_staging_dir }}"
-        state: directory
-        mode: 0777
-
     - name: '{{ ansible_name_module }} | import_tasks | Import additional raw PVC Download tasks'
       ansible.builtin.import_tasks: tasks/download-raw-bound-pvcs-from-source-cluster.yaml 
 
