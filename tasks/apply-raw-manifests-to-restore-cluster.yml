@@ -1,0 +1,190 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | manifest_backup_staging_dir '
+  ansible.builtin.set_fact:
+    manifest_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests"
+  when:
+    - not manifest_backup_staging_dir is defined or not manifest_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the manifest download staging dir exist '
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0777
+  loop:
+    - "{{ manifest_backup_staging_dir }}"
+
+- name: '{{ ansible_name_module }} | download raw manifests to S3 bucket '
+  when:
+    - download_manifests_from_s3 is defined
+    - download_manifests_from_s3 | bool 
+  block:
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != ''
+        msg: "The AWS CLI binary is required to download the raw manifest to the S3 bucket "
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+
+    - name: '{{ ansible_name_module }} | command:shell | copy raw manifest directory from S3 bucket'
+      ansible.builtin.shell: >
+        {{ aws_cli }} s3 --region {{ oadp_bucket_region }} sync s3://{{ oadp_s3_bucket }}/raw-manifests/ \
+         {{ manifest_backup_staging_dir }}/ \
+         --endpoint-url https://{{ oadp_s3url }} --no-verify-ssl
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ oadp_bucket_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ oadp_bucket_access_secret }}"
+      register: manifests_downloaded
+
+- name: '{{ ansible_name_module }} | Apply raw manifests '
+  when:
+    - auto_apply_raw_manifests is defined
+    - auto_apply_raw_manifests | bool 
+  block:
+    - name: '{{ ansible_name_module }} | find | Find all workload files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}"
+        recurse: yes
+        patterns: '*-manifest.yaml'
+      register: wkl_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | workload file paths'
+      ansible.builtin.set_fact:
+        wkl_manifest_file_paths: "{{ wkl_manifests.files | map(attribute='path') | list }}"
+      when:
+        - wkl_manifests is defined
+        - wkl_manifests.files is defined
+        - wkl_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all workload manifest paths output '
+      ansible.builtin.debug:
+        var: wkl_manifest_file_paths
+        verbosity: 2
+      when:
+        - wkl_manifest_file_paths is defined
+        - wkl_manifest_file_paths | length > 0 
+
+    - name: '{{ ansible_name_module }} | find | Find all roles files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/roles"
+        recurse: yes
+        patterns: '*-usermgt.yaml'
+      register: rb_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | roles file paths'
+      ansible.builtin.set_fact:
+        rb_manifest_file_paths: "{{ rb_manifests.files | map(attribute='path') | list }}"
+      when:
+        - rb_manifests is defined
+        - rb_manifests.files is defined
+        - rb_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all role and rolebinding manifest paths output '
+      ansible.builtin.debug:
+        var: rb_manifest_file_paths
+        verbosity: 2
+      when:
+        - rb_manifest_file_paths is defined
+        - rb_manifest_file_paths | length > 0 
+
+    - name: '{{ ansible_name_module }} | find | Find all pvs files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/pvs"
+        recurse: yes
+        patterns: '*-pv.yaml'
+      register: pv_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | pvs file paths'
+      ansible.builtin.set_fact:
+        pv_manifest_file_paths: "{{ pv_manifests.files | map(attribute='path') | list }}"
+      when:
+        - pv_manifests is defined
+        - pv_manifests.files is defined
+        - pv_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all pv manifest paths output '
+      ansible.builtin.debug:
+        var: pv_manifest_file_paths
+        verbosity: 2
+      when:
+        - pv_manifest_file_paths is defined
+        - pv_manifest_file_paths | length > 0 
+
+    - name: '{{ ansible_name_module }} | find | Find all pvcs files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/pvs/pvcs"
+        recurse: yes
+        patterns: '*-pvc.yaml'
+      register: pvc_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | pvcs file paths'
+      ansible.builtin.set_fact:
+        pvc_manifest_file_paths: "{{ pvc_manifests.files | map(attribute='path') | list }}"
+      when:
+        - pvc_manifests is defined
+        - pvc_manifests.files is defined
+        - pvc_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all pvcs manifest paths output '
+      ansible.builtin.debug:
+        var: pvc_manifest_file_paths 
+        verbosity: 2
+      when:
+        - pvc_manifest_file_paths is defined
+        - pvc_manifest_file_paths | length > 0 
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | rb manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ rb_manifest_file_paths }}"
+      when:
+        - apply_rb_manifests is defined
+        - apply_rb_manifests | bool 
+        - rb_manifest_file_paths is defined
+        - rb_manifest_file_paths | length > 0 
+      register: rb_manifests_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | PV manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ pv_manifest_file_paths }}"
+      when:
+        - apply_pv_manifests is defined
+        - apply_pv_manifests | bool 
+        - pv_manifest_file_paths is defined
+        - pv_manifest_file_paths | length > 0 
+      register: pv_manifests_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | PVC manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ pvc_manifest_file_paths }}"
+      when:
+        - apply_pvc_manifests is defined
+        - apply_pvc_manifests | bool 
+        - pv_manifest_file_paths is defined
+        - pv_manifest_file_paths | length > 0 
+      register: pvc_manifests_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | workload manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ wkl_manifest_file_paths }}"
+      when:
+        - apply_wkl_manifests is defined
+        - apply_wkl_manifests | bool 
+        - wkl_manifest_file_paths is defined
+        - wkl_manifest_file_paths | length > 0 
+      register: pvc_manifests_applied

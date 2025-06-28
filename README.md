@@ -114,9 +114,13 @@ Note that to successfully run each of the playboks referenced above it is import
 ### OADP Cluster Workload Restore
 To restore the workload to the destination cluster run the provided playbooks as follows:  
 1. Ensure that there is succesful backup.
+> [!NOTE]
+> The following step is to be performed against the backup cluster.  
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-restore.yml 
 ```
+> [!NOTE]
+> The following steps are to be performed against the targeted restore/destination cluster.  
 2. Ensure the destination cluster meets the prerequisite to be used for an OADP restore. To do this use the provided playbook to perfrom the prerequisite validation.
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-destination-cluster-info-pre-restore.yml
@@ -126,7 +130,8 @@ ansible-playbook --ask-vault-pass  -vvv validate-destination-cluster-info-pre-re
 ```
 ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-oadp-migration-restore.yml
 ```
-5. Optional steps. In the event of failures use the provided helper playbooks to perform resources cleanup. For examle if you need to cleanup the OADP deployment you can use the `undeploy-oadp-migration-application.yml`. 
+5. Optional step. If necessary you can use the provided playbook to download and apply raw manifests that were created during the backup step for namespaces not matching the strict requirement for an OADP backup so that you can apply those manifests to the the restore cluster if you want to. You can use the `post-deploy-configure-apply-raw-manifests-to-destination-cluster.yml` playbook to apply those raw manifests to the restore cluster. 
+6. Optional steps. In the event of failures use the provided helper playbooks to perform resources cleanup. For examle if you need to cleanup the OADP deployment you can use the `undeploy-oadp-migration-application.yml`. 
 
 Note that for each of the playbook steps above you need to ensure the appropriate variables are provided either through the CLI using the -e option for the `ansible-playbook` command or by updating the `oadp-migration.yml` variable file.
 
@@ -152,7 +157,10 @@ ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-raw-pvc-download-f
 
 ### Raw Persistence manifests Cluster Workload Restore
 To restore the workload to the destination cluster, apply all of the downlaoded manifests to the new cluster (ensuring the PVs are applied first and the the PVCs) using the oc command like `oc apply -f <pvs-dir>` and `oc apply -f <pvc-dir`. Validate that the objects were properly applied and that the backing volumes were properly mounted by the nodes in the new cluster. Also verify and ensure that the nodes on which the volumes were attached are also the nodes on which the workloads that need those volumes are scheduled on.   
-
+If necessary use the provided `post-deploy-apply-raw-manifests-to-destination-cluster.yml` playbook to help dwonload and apply the raw manifests to the restore cluster. You can do so using the following example.  
+```
+ansible-playbook --ask-vault-pass  -vvv post-deploy-apply-raw-manifests-to-destination-cluster.yml 
+```
 
 
 

@@ -146,3 +146,14 @@ oadp_restore_select_filter_complex: 'select([.status.phase] | inside(["Completed
 oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_simple }}'
 use_oadp_complex_select_filter: 'false'
 backups_to_exclude_from_restore: []
+force_whole_cluster_backup: 'false'
+pause_mcp: 'false'
+unpause_mcp: 'false'
+raw_namespaces_to_backup: []
+include_released_pvs: 'true'
+download_manifests_from_s3: 'false'
+auto_apply_raw_manifests: 'false'
+apply_wkl_manifests: 'false'
+apply_rb_manifests: 'false'
+apply_pv_manifests: 'false'
+apply_pvc_manifests: 'false'
