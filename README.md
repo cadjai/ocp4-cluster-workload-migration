@@ -112,8 +112,11 @@ Note that to successfully run each of the playboks referenced above it is import
 
 
 ### OADP Cluster Workload Restore
-To restore the workload to the destination cluster run the provided playbooks as follows:
+To restore the workload to the destination cluster run the provided playbooks as follows:  
 1. Ensure that there is succesful backup.
+```
+ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-restore.yml 
+```
 2. Ensure the destination cluster meets the prerequisite to be used for an OADP restore. To do this use the provided playbook to perfrom the prerequisite validation.
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-destination-cluster-info-pre-restore.yml

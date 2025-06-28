@@ -1,0 +1,48 @@
+- name: ' Konductor | Provision UPI Infra | validate-source-cluster-pre-restore.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/oadp-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Validate OADP Backup objects on source cluster Pre restore"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | assert | the backup namespace is defined'
+      ansible.builtin.assert:
+        that:
+          - oadp_backup_ns is defined and oadp_backup_ns != ""
+        msg: " the oadp_backup_ns must be set and valid "
+
+    - name: '{{ ansible_name_module }} | validate required variables '
+      when:
+        - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_console_url is defined
+              - backup_src_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_cluster_token is defined
+              - backup_src_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+        - name: '{{ ansible_name_module }} | assert | the Backup Namespace on the Source Cluster is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_src_namespace is defined
+              - backup_src_namespace != ''
+            msg: "The Source cluster backup namespace is required"
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            backup_src_cluster_console_port: '6443'
+          when:
+            - not backup_src_cluster_console_port is defined or backup_src_cluster_console_port == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source backup Cluster backup CRs additional tasks'
+      ansible.builtin.import_tasks: tasks/check-backup-objects-pre-restore.yml 

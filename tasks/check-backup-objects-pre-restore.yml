@@ -1,0 +1,170 @@
+---
+### Retrieve the list of DataUpload associated to the list of backup to ensure there are things to restore
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup dataupload to process'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name ' 
+  register: dus_to_restore_raw_out
+
+- name: '{{ ansible_name_module }} | set_fact | set dus_to_restore in array format'
+  ansible.builtin.set_fact:
+    dus_to_restore: '{{ dus_to_restore_raw_out.stdout_lines | list }}'
+  when:
+    - dus_to_restore_raw_out is defined
+    - dus_to_restore_raw_out.stdout is defined
+    - dus_to_restore_raw_out.stdout != ''
+    - dus_to_restore_raw_out.stdout_lines is defined
+    - dus_to_restore_raw_out.stdout_lines | length > 0
+
+- name: '{{ ansible_name_module }} | Assert that there are dataupload for the backup to restore '
+  assert:
+    that:
+      - dus_to_restore is defined
+      - dus_to_restore | length > 0
+    msg: " the backup to restore need to have associated dataupload in order to be restored "
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup namespace associated with DU to process'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name | ltrimstr("{{ default_backup_name }}-") | .[:-6]' | uniq
+  register: dus_to_restore_namespaces
+
+- name: '{{ ansible_name_module }} | set_fact | set dus_to_restore_namespaces in array format'
+  ansible.builtin.set_fact:
+    dus_to_restore_namespaces_list: '{{ dus_to_restore_namespaces.stdout_lines | list }}'
+  when:
+    - dus_to_restore_namespaces is defined
+    - dus_to_restore_namespaces.stdout is defined
+    - dus_to_restore_namespaces.stdout != '' 
+    - dus_to_restore_namespaces.stdout_lines is defined
+    - dus_to_restore_namespaces.stdout_lines | length > 0 
+
+- name: '{{ ansible_name_module }} | Assert that there are namespaces associated with the backup to restore '
+  assert:
+    that:
+      - dus_to_restore_namespaces_list is defined
+      - dus_to_restore_namespaces_list | length > 0
+    msg: " there needs to be at least a valid namespace assocaiated with the backups to restore "
+
+- name: '{{ ansible_name_module }} | Configure OADP Restore  '
+  when:
+    - not backups_to_restore is defined or backups_to_restore | length == 0 or backups_to_restore == ''
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | set select filter string to use'
+      ansible.builtin.set_fact:
+        oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_complex }}'
+      when:
+        - use_oadp_complex_select_filter is defined
+        - use_oadp_complex_select_filter | bool
+        - oadp_restore_select_filter_complex is defined
+        - oadp_restore_select_filter_complex != ''
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0
+      register: completed_oadp_backup_out
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+      ansible.builtin.debug:
+        msg: "{{ completed_oadp_backup_out.stdout | from_json }}"
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | set_fact | set completed_oadp_backup_list in array format'
+      ansible.builtin.set_fact:
+        completed_oadp_backup_list: '{{ completed_oadp_backup_out.stdout | from_json }}'
+      when:
+        - completed_oadp_backup_out is defined
+        - completed_oadp_backup_out.rc is defined
+        - completed_oadp_backup_out.rc == 0
+        - completed_oadp_backup_out.stdout is defined
+        - completed_oadp_backup_out.stdout != ''
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+      ansible.builtin.debug:
+        var: completed_oadp_backup_list
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | .metadata.name'
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0
+      register: backups_to_restore_raw_out
+
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore_list in array format'
+      ansible.builtin.set_fact:
+        backups_to_restore_list: '{{ backups_to_restore_raw_out.stdout_lines | list }}'
+      when:
+        - backups_to_restore_raw_out is defined
+        - backups_to_restore_raw_out.rc is defined
+        - backups_to_restore_raw_out.rc == 0
+        - backups_to_restore_raw_out.stdout_lines is defined
+        - backups_to_restore_raw_out.stdout | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | oadp backup namespace associated with Backup to process'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | .metadata.name | ltrimstr("{{ default_backup_name }}-")' | uniq
+      register: backup_to_restore_namespaces
+
+    - name: '{{ ansible_name_module }} | set_fact | set backup_to_restore_namespaces in array format'
+      ansible.builtin.set_fact:
+        backup_to_restore_namespaces_list: '{{ backup_to_restore_namespaces.stdout_lines | list }}'
+      when:
+        - backup_to_restore_namespaces is defined
+        - backup_to_restore_namespaces.stdout is defined
+        - backup_to_restore_namespaces.stdout != '' 
+        - backup_to_restore_namespaces.stdout_lines is defined
+        - backup_to_restore_namespaces.stdout_lines | length > 0 
+    
+    - name: '{{ ansible_name_module }} | Assert that there are namespaces associated with the backup to restore '
+      assert:
+        that:
+          - backup_to_restore_namespaces_list is defined
+          - backup_to_restore_namespaces_list | length > 0
+        msg: " there needs to be at least a valid namespace assocaiated with the backups to restore "
+
+    - name: '{{ ansible_name_module }} | set_fact | set filtered_backups_to_restore list'
+      ansible.builtin.set_fact:
+        filtered_backups_to_restore: '{{ backups_to_restore_list | symmetric_difference(backups_to_exclude_from_restore) }}'
+      when:
+        - backups_to_exclude_from_restore is defined
+        - backups_to_exclude_from_restore | length > 0
+
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+      ansible.builtin.set_fact:
+        backups_to_restore: '{{ filtered_backups_to_restore if filtered_backups_to_restore | d([], true) | length > 0 else backups_to_restore_list }}'
+      when:
+        - not backups_to_restore is defined or backups_to_restore | length == 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of backups to restore output '
+  ansible.builtin.debug:
+    var: backups_to_restore
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | Assert that there are backup to restore '
+  assert:
+    that:
+      - backups_to_restore is defined
+      - backups_to_restore | length > 0
+    msg: " the backup to restore need to exist in order to be restored "
+
+- name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+  ansible.builtin.set_fact:
+    backups_to_restore_ns_difference: '{{ backup_to_restore_namespaces_list | difference(dus_to_restore_namespaces_list) }}'
+
+#- name: '{{ ansible_name_module }} | Assert that there are backup to restore '
+#  assert:
+#    that:
+#      - backups_to_restore_ns_difference is defined
+#      - backups_to_restore_ns_difference | length == 0
+#    msg: " the backup to restore need to exist in order to be restored "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of backups to restore output '
+  ansible.builtin.debug:
+    msg: " The count of completed backup to restore is:  {{ backups_to_restore | length }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of data uploads to restore output '
+  ansible.builtin.debug:
+    msg: " The count of completed data uploads to restore is:  {{ dus_to_restore | length }}"
+    verbosity: 2
