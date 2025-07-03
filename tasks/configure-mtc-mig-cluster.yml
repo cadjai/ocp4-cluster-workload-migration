@@ -1,0 +1,85 @@
+---
+- name: '{{ ansible_name_module }} | assert | the cluster name is defined'
+  ansible.builtin.assert:
+    that:
+      - mig_cntl_cluster_name is defined
+      - mig_cntl_cluster_name != '' 
+    msg: "The remote cluster name is required to add the source cluster configuration"
+
+- name: '{{ ansible_name_module }} | assert | the cluster api url is defined'
+  ansible.builtin.assert:
+    that:
+      - mig_cntl_cluster_api_url is defined
+      - mig_cntl_cluster_api_url != '' 
+    msg: "The remote cluster name is required to add the source cluster configuration"
+
+- name: '{{ ansible_name_module }} | assert | the source cluster token is defined'
+  ansible.builtin.assert:
+    that:
+      - mig_cntl_cluster_sa_token is defined
+      - mig_cntl_cluster_sa_token != '' 
+    msg: "The remote cluster SA token is required to add the source cluster configuration"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print SA Token output'
+  ansible.builtin.debug:
+    var: mig_cntl_cluster_sa_token
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact |  mig_cntl_cluster_token_sa_secret_name '
+  ansible.builtin.set_fact:
+    mig_cntl_cluster_token_sa_secret_name: "{{ mig_cntl_cluster_name }}-secret"
+  when:
+    - not mig_cntl_cluster_token_sa_secret_name is defined or mig_cntl_cluster_token_sa_secret_name == ''
+
+- name: '{{ ansible_name_module }} | set_fact |  mig_cntl_cluster_token_sa_secret_ns '
+  ansible.builtin.set_fact:
+    mig_cntl_cluster_token_sa_secret_ns: "openshift-config"
+  when:
+    - not mig_cntl_cluster_token_sa_secret_ns is defined or mig_cntl_cluster_token_sa_secret_ns == ''
+
+- name: '{{ ansible_name_module }} | Get Existing Mig Cluster SA Token secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get secret {{ mig_cntl_cluster_token_sa_secret_name }} -n {{ mig_cntl_cluster_token_sa_secret_ns }}
+  ignore_errors: yes
+  register: mig_cluster_sa_secret_exist
+
+- name: '{{ ansible_name_module }} | Delete Existing Mig  Cluster SA Token secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} delete secret {{ mig_cntl_cluster_token_sa_secret_name }} -n {{ mig_cntl_cluster_token_sa_secret_ns }} 
+  ignore_errors: yes
+  when:
+    - mig_cluster_sa_secret_exist.rc is defined
+    - mig_cluster_sa_secret_exist.rc == 0
+    - mig_cluster_sa_secret_exist.stdout is defined
+    - mig_cluster_sa_secret_exist.stdout != '' 
+    - mig_cntl_cluster_token_sa_secret_name in mig_cluster_sa_secret_exist.stdout
+  register: mig_cluster_sa_secret_delete
+
+- name: '{{ ansible_name_module }} | create Mig  Cluster SA Token  secret'
+  ansible.builtin.command: >
+    {{ openshift_cli }} create secret generic {{ mig_cntl_cluster_token_sa_secret_name }} \
+      --from-literal=saToken={{ mig_cntl_cluster_sa_token }} \
+       -n {{ mig_cntl_cluster_token_sa_secret_ns }}
+  register: mig_cluster_sa_secret_created
+
+- name: '{{ ansible_name_module }} | template | Render MigCluster manifests '
+  ansible.builtin.template:
+    src: "templates/mtc-migration-sourcecluster-customresource.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/mtc-migration-sourcecluster-customresource.yml"
+    force: yes
+  register: mig_cluster_config_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create MigCluster'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/mtc-migration-sourcecluster-customresource.yml
+  when:
+    - mig_cluster_config_copied is defined
+    - mig_cluster_config_copied.dest is defined
+    - mig_cluster_config_copied.state is defined
+    - "'file' in  mig_cluster_config_copied.state"
+  register: mig_cluster_config_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 120
+  delegate_to: localhost

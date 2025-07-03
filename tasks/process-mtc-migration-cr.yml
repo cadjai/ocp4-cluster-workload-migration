@@ -1,0 +1,74 @@
+---
+  ### Ensrue Migration Plan exist and in ready state before performing a migration 
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get migplan state'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get migplan {{ mig_cntl_migplan_name }} -n openshift-migration | awk '{print $2}'
+  register: mig_plan_state
+
+- name: '{{ ansible_name_module }} | assert | Ensure the MigPlan is defined and in ready state'
+  ansible.builtin.assert:
+    that:
+      - mig_plan_state is defined
+      - mig_plan_state.rc is defined
+      - mig_plan_state.rc == 0 
+      - mig_plan_state.stdout is defined
+      - mig_plan_state.stdout != '' 
+      - mig_plan_state.stdout | bool 
+    msg: "The MigPlan CR is required and in Ready state to perfrom a migration "
+
+- name: '{{ ansible_name_module }} | template | Render Mig Plan manifests '
+  ansible.builtin.template:
+    src: "{{ item }}"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ mig_cntl_migplan_name }}-{{ (item.split('/')[1]).split('.j2')[0] }}"
+    force: yes
+  loop:
+    - templates/mtc-migration-migmigration-customresource.yml.j2
+    - templates/mtc-migration-mig-analytic.yml.j2 
+  register: mig_plan_crs_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print output rendered manifests'
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ mig_plan_crs_copied.results }}"
+  when:
+    - mig_plan_crs_copied is defined
+    - mig_plan_crs_copied.results is defined
+    - mig_plan_crs_copied.results | length > 0 
+    - item.dest is defined
+    - item.state is defined
+    - "'file' in item.state"
+
+- name: '{{ ansible_name_module }} | create Mig Plan related Manifests'
+  when:
+    - mig_plan_crs_copied is defined
+    - mig_plan_crs_copied.results is defined
+    - mig_plan_crs_copied.results | length > 0 
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Mig Migration Manifest'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ item.dest }}
+      loop: "{{ mig_plan_crs_copied.results }}"
+      when:
+        - item.dest is defined
+        - item.state is defined
+        - "'file' in item.state"
+        - "'migmigration' in item.dest"
+      register: migmigration_configs_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+      ansible.builtin.wait_for:
+        timeout: 90
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Mig Analytic  Manifest'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ item.dest }}
+      loop: "{{ mig_plan_crs_copied.results }}"
+      when:
+        - item.dest is defined
+        - item.state is defined
+        - "'file' in item.state"
+        - "'analytic' in item.dest"
+      register: mig_anlytic_configs_applied
+

@@ -1,0 +1,53 @@
+---
+- name: '{{ ansible_name_module }} | template | Render Mig Plan manifests '
+  ansible.builtin.template:
+    src: "templates/mtc-migration-plan-customresource.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ mig_cntl_migplan_name }}-mtc-migration-plan-customresource.yml"
+    force: yes
+  register: mig_plan_configs_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print output rendered manifests'
+  ansible.builtin.debug:
+    var:  mig_plan_configs_copied 
+    verbosity: 2
+  when:
+    - mig_plan_configs_copied is defined
+    - mig_plan_configs_copied.dest is defined
+    - mig_plan_configs_copied.state is defined
+    - "'file' in mig_plan_configs_copied.state"
+
+- name: '{{ ansible_name_module }} | create Mig Plan Manifests'
+  when:
+    - mig_plan_configs_copied is defined
+    - mig_plan_configs_copied.dest is defined
+    - mig_plan_configs_copied.state is defined
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Mig Plan Manifest'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ mig_plan_configs_copied.dest }}
+      when:
+        - mig_plan_configs_copied.dest is defined
+        - mig_plan_configs_copied.state is defined
+        - "'file' in mig_plan_configs_copied.state"
+        - "'plan' in mig_plan_configs_copied.dest"
+      register: mig_plan_configs_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+      ansible.builtin.wait_for:
+        timeout: 90
+      delegate_to: localhost
+
+    ### wait for Mig Plan to have a ready state before applying the other CRs
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get migplan state'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get migplan {{ mig_cntl_migplan_name }} --no-headers -n openshift-migration | awk '{print $1}')
+      register: mig_plan_state
+      until:
+        - mig_plan_state.rc is defined
+        - mig_plan_state.rc == 0
+        - mig_plan_state.stdout is defined
+        - mig_plan_state.stdout != ''
+        - mig_plan_state.stdout | bool
+      retries: 10
+      delay: 30
+

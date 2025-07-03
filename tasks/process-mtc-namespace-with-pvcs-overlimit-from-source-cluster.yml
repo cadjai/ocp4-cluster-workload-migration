@@ -1,0 +1,137 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ src_mtc_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -A  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq -s '. | group_by(.metadata.namespace) | map({namespace: .[0].metadata.namespace, count: length} | select(.count > 26))' 
+  register: namespaces_with_bound_pvcs_over_limit_with_count
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs in cluster namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -A  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq -s '. | group_by(.metadata.namespace) | map({namespace: .[0].metadata.namespace, count: length} | select(.count > 26))' | jq '.[] | .namespace' 
+  register: namespaces_with_bound_pvcs_over_limit 
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | first half of bound pvcs namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ item }}  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq --slurp  '.[:24]' 
+  loop: "{{ namespaces_with_bound_pvcs_over_limit.stdout_lines }}"
+  register: namespaces_pvcs_part1
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print first half of bound pvcs namespaces output '
+  ansible.builtin.debug:
+    msg: "The first half of bound pvcs namespaces is : {{ namespaces_pvcs_part1.results }}"
+    verbosity: 2
+  when:
+    - namespaces_pvcs_part1 is defined
+    - namespaces_pvcs_part1.results | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print first half of bound pvcs namespaces output '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ namespaces_pvcs_part1.results }}"
+  when:
+    - namespaces_pvcs_part1 is defined
+    - namespaces_pvcs_part1.results | length > 0 
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | second half of bound pvcs namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ item }}  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq --slurp  '.[25:]' 
+  loop: "{{ namespaces_with_bound_pvcs_over_limit.stdout_lines }}"
+  register: namespaces_pvcs_part2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print second half of bound pvcs namespaces output '
+  ansible.builtin.debug:
+    msg: "The second half of bound pvcs namespaces is : {{ namespaces_pvcs_part2.results }}"
+    verbosity: 2
+  when:
+    - namespaces_pvcs_part2 is defined
+    - namespaces_pvcs_part2.results | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print second half of bound pvcs namespaces output '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ namespaces_pvcs_part2.results }}"
+  when:
+    - namespaces_pvcs_part2 is defined
+    - namespaces_pvcs_part2.results | length > 0 
+
+- name: '{{ ansible_name_module }} | set_fact | set over_limit_namespaces_with_pvc_list in array format'
+  ansible.builtin.set_fact:
+    over_limit_namespaces_with_pvc_list: '{{ over_limit_namespaces_with_pvc_list | default([]) + [{"name": name, "pvcs": item.stdout | from_json | list }] }}'
+  loop: "{{ namespaces_pvcs_part1.results }}"
+  vars:
+    name: "{{ item.item | replace('\"','') }}-part1"
+  when:
+    - namespaces_pvcs_part1 is defined
+    - namespaces_pvcs_part1.results is defined
+    - namespaces_pvcs_part1.results | length > 0 
+
+- name: '{{ ansible_name_module }} | set_fact | set over_limit_namespaces_with_pvc_list in array format'
+  ansible.builtin.set_fact:
+    over_limit_namespaces_with_pvc_list: '{{ over_limit_namespaces_with_pvc_list | default([]) + [{"name": name, "pvcs": item.stdout | from_json | list }] }}'
+  loop: "{{ namespaces_pvcs_part2.results }}"
+  vars:
+    name: "{{ item.item | replace('\"','') }}-part2"
+  when:
+    - namespaces_pvcs_part2 is defined
+    - namespaces_pvcs_part2.results is defined
+    - namespaces_pvcs_part2.results | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print over_limit_namespaces_with_pvc_list output '
+  ansible.builtin.debug:
+    msg: "The list of over_limit_namespaces_with_pvc_list is : {{ over_limit_namespaces_with_pvc_list }}"
+    verbosity: 2
+  when:
+    - over_limit_namespaces_with_pvc_list is defined
+    - over_limit_namespaces_with_pvc_list | length > 0 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print over_limit_namespaces_with_pvc_list output '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ over_limit_namespaces_with_pvc_list }}"
+  when:
+    - over_limit_namespaces_with_pvc_list is defined
+    - over_limit_namespaces_with_pvc_list | length > 0 
+
+### Process Mig plan by namespace
+- name: '{{ ansible_name_module }} | Add Migration Plan Resources to MTC  '
+  ansible.builtin.include_tasks:  tasks/process-mtc-mig-plan-cr.yml
+  loop: "{{ over_limit_namespaces_with_pvc_list }}"
+  vars:
+    mig_cntl_migplan_name: "{{ default_mig_cntl_migplan_name }}-{{ item.name }}"
+    namespace_list: '{{ [item.pvcs[0].metadata.namespace] }}'
+    include_pvs: "true"
+    ns_with_pvc_list: "{{ item.pvcs }}"
+  when:
+    - over_limit_namespaces_with_pvc_list is defined
+    - over_limit_namespaces_with_pvc_list | length > 0 
+  register: all_backup_processed
+
+ ### Process Migration by namespace
+- name: '{{ ansible_name_module }} | Add MigMigration Resources to MTC '
+  ansible.builtin.include_tasks:  tasks/process-mtc-migration-cr.yml
+  loop: "{{ over_limit_namespaces_with_pvc_list }}"
+  vars:
+    mig_cntl_migplan_name: "{{ default_mig_cntl_migplan_name }}-{{ item.name }}"
+    mig_cntl_migration_name: "{{ default_mig_cntl_migplan_name }}-{{ item.name }}"
+  when:
+    - over_limit_namespaces_with_pvc_list is defined
+    - over_limit_namespaces_with_pvc_list | length > 0 
+  register: all_backup_processed
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ src_mtc_cluster_console_url }}:{{ src_mtc_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
