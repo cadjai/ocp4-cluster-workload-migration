@@ -1,0 +1,93 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.set_fact | get loop count'
+  ansible.builtin.set_fact:
+    part_count: "{{ (current_ns.count/25) | int }}"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print part_count output '
+  ansible.builtin.debug:
+    var: part_count 
+    verbosity: 2
+  when:
+    - part_count is defined
+
+- name: '{{ ansible_name_module }} | ansible.builtin.set_fact | get loop count'
+  ansible.builtin.set_fact:
+    remain_count: "{{ current_ns.count % 25 }}"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print part_count output '
+  ansible.builtin.debug:
+    var: remain_count 
+    verbosity: 2
+  when:
+    - remain_count is defined
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | whole elements of bound pvcs namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ current_ns.namespace }}  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq --slurp  '.[{{ (item|int - 1)*25 }}: {{ (item|int)*25 }}]'
+  with_sequence: start=1 end={{ part_count }} stride=1
+  register: namespaces_pvcs_whole_parts
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespaces_pvcs_whole_parts.results output '
+  ansible.builtin.debug:
+    var: namespaces_pvcs_whole_parts.results 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print namespaces_pvcs_whole_parts.results items output '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ namespaces_pvcs_whole_parts.results }}"
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | second half of bound pvcs namespaces'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc -n {{ current_ns.namespace }}  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq --slurp  '.[-{{ remain_count }}:]'
+  register: namespaces_pvcs_remain_part
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print part_count output '
+  ansible.builtin.debug:
+    var: namespaces_pvcs_remain_part 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set over_limit_namespaces_with_pvc_list in array format'
+  ansible.builtin.set_fact:
+    over_limit_namespace_with_pvc_list: '{{ over_limit_namespace_with_pvc_list | default([]) + [{"name": name, "pvcs": item.stdout | from_json | list }] }}'
+  loop: "{{ namespaces_pvcs_whole_parts.results }}"
+  loop_control:
+    index_var: cnt
+  vars:
+    name: "{{ current_ns.namespace | replace('\"','') }}-part{{ cnt }}"
+  when:
+    - namespaces_pvcs_whole_parts is defined
+    - namespaces_pvcs_whole_parts.results is defined
+    - namespaces_pvcs_whole_parts.results | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | set over_limit_namespaces_with_pvc_list in array format'
+  ansible.builtin.set_fact:
+    over_limit_namespace_with_pvc_list: '{{ over_limit_namespace_with_pvc_list | default([]) + [{"name": name, "pvcs": namespaces_pvcs_remain_part.stdout | from_json | list }] }}'
+  vars:
+    name: "{{ current_ns.namespace | replace('\"','') }}-part{{ (part_count|int + 1) }}"
+  when:
+    - namespaces_pvcs_remain_part is defined
+    - namespaces_pvcs_remain_part.stdout is defined
+    - namespaces_pvcs_remain_part.stdout != '' 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print over_limit_namespace_with_pvc_list output '
+  ansible.builtin.debug:
+    msg: "The list of over_limit_namespaces_with_pvc_list is : {{ over_limit_namespace_with_pvc_list }}"
+    verbosity: 2
+  when:
+    - over_limit_namespace_with_pvc_list is defined
+    - over_limit_namespace_with_pvc_list | length > 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print over_limit_namespace_with_pvc_list output '
+  ansible.builtin.debug:
+    var: item
+    verbosity: 2
+  loop: "{{ over_limit_namespace_with_pvc_list }}"
+  when:
+    - over_limit_namespace_with_pvc_list is defined
+    - over_limit_namespace_with_pvc_list | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | append list to  merged_over_limit_namespace_with_pvc_list in array format'
+  ansible.builtin.set_fact:
+    merged_over_limit_namespace_with_pvc_list: '{{ merged_over_limit_namespace_with_pvc_list + over_limit_namespace_with_pvc_list }}'
