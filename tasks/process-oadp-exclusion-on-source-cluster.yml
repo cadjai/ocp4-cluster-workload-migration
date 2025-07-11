@@ -21,6 +21,7 @@
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label unbound pvcs'
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite pvc {{ item }} {{ oadp_exclusion_add_label }}
+      ignore_errors: true
       loop: "{{ unbound_pvcs.stdout_lines }}"
       when:
         - unbound_pvcs.rc is defined
@@ -58,6 +59,7 @@
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label failing Imagestreams'
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite imagestream {{ item.name }}  -n {{ item.namespace }} {{ oadp_exclusion_add_label }}
+      ignore_errors: true
       loop: "{{ failing_is.stdout_lines }}"
       when:
         - failing_is.rc is defined
@@ -100,6 +102,7 @@
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_add_label }}
       loop: "{{ build_pods.stdout_lines }}"
+      ignore_errors: true
       when:
         - build_pods.rc is defined
         - build_pods.rc == 0 
@@ -137,6 +140,7 @@
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite job {{ item }} {{ oadp_exclusion_add_label }}
       loop: "{{ failed_jobs.stdout_lines }}"
+      ignore_errors: true
       when:
         - failed_jobs.rc is defined
         - failed_jobs.rc == 0 
@@ -178,6 +182,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label build pods'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_add_label }}
+          ignore_errors: true
           loop: "{{ non_running_pods.stdout_lines }}"
           when:
             - non_running_pods.rc is defined
@@ -224,6 +229,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | label running non ready pods'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pod {{ item.name }} -n {{ item.namespace }} {{ oadp_exclusion_add_label }}
+          ignore_errors: true
           loop: "{{ non_ready_pods_to_label }}"
           when:
             - non_ready_pods.rc is defined
@@ -312,6 +318,7 @@
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel unbound pvcs'
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite BackupStorageLocation {{ item }} {{ oadp_exclusion_add_bsl_label }}
+      ignore_errors: true
       loop: "{{ odap_bsl_to_exclude_list }}"
       when:
         - item is defined
@@ -366,6 +373,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel unbound pvcs'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pvc {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ unbound_pvc_list }}"
           when:
             - unbound_pvc_list is defined
@@ -418,6 +426,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel imagestreams'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite imagestream {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ failing_is_to_label_list }}"
           when:
             - failing_is_to_label_list is defined
@@ -469,6 +478,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel build pods'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ build_pods_list }}"
           when:
             - build_pods_to_label_list is defined
@@ -520,6 +530,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel failed jobs'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite job {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ failed_jobs_list }}"
           when:
             - failed_jobs_to_label_list is defined
@@ -574,6 +585,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel  non running pods'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ non_running_pods_list }}"
           when:
             - non_running_pods_to_label_list is defined
@@ -628,6 +640,7 @@
         - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel  non ready pods'
           ansible.builtin.shell: >
             {{ openshift_cli }} label --overwrite pod {{ item }} {{ oadp_exclusion_remove_label }}
+          ignore_errors: true
           loop: "{{ non_ready_pods_list }}"
           when:
             - non_ready_pods_to_label_list is defined
@@ -683,6 +696,7 @@
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} label | unlabel unbound pvcs'
       ansible.builtin.shell: >
         {{ openshift_cli }} label --overwrite BackupStorageLocation {{ item }} {{ oadp_exclusion_remove_bsl_label }}
+      ignore_errors: true
       loop: "{{ odap_bsl_to_exclude_list }}"
       when:
         - item is defined

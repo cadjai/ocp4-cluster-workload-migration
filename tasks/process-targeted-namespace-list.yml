@@ -1,0 +1,43 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+  ansible.builtin.set_fact:
+    updated_namespaces_to_backup: '{{ namespaces_to_backup }}'
+  when:
+    - namespaces_to_backup is defined
+    - namespaces_to_backup | length > 0
+
+- name: '{{ ansible_name_module }} | Process Namespace to include '
+  when:
+    - force_whole_cluster_backup is defined
+    - force_whole_cluster_backup | bool
+  block:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Backup Source Cluster NS retrieval tasks'
+      ansible.builtin.include_tasks: tasks/retrieve-namespacelist-from-source-cluster.yml
+      when:
+        - not namespaces_to_backup is defined or namespaces_to_backup | length == 0
+
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_to_backup: '{{ namespace_list_yaml }}'
+      when:
+        - not namespaces_to_backup is defined or namespaces_to_backup | length == 0
+
+### For OADP with CSI snapshot and data mover it is best to only backup NS with bound persistence
+    ## So the process below will only include NS with bound PVCs. If all is needed then provide the override togggle
+- name: '{{ ansible_name_module }} | Process Namespace to include '
+  when:
+    - not force_whole_cluster_backup is defined or not force_whole_cluster_backup | bool
+  block:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source Cluster Namespace List retrievl additional tasks'
+      ansible.builtin.import_tasks: tasks/retrieve-namespace-with-pvcs-list-from-oadp-source-cluster.yml
+
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_to_backup: '{{ filtered_namespace_with_pvcs_yaml }}'
+
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_excluded_from_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_excluded_from_backup: '{{ namespace_list_yaml | symmetric_difference(updated_namespaces_to_backup) }}'
+
+
+

@@ -81,6 +81,27 @@
       vars:
         backup_name_prefix_strg: "{{ (backup_name_prefix + '-') if backup_name_prefix is defined and backup_name_prefix != '' else '' }}"
 
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator cleanup tasks'
+      ansible.builtin.include_tasks: tasks/cleanup-previous-oadp-operator-install.yml
+      loop: "{{ previous_oadp_namespace_list }}"
+      when:
+        - cleanup_previous_oadp_operator is defined
+        - cleanup_previous_oadp_operator | bool 
+        - previous_oadp_namespace_list is defined
+        - previous_oadp_namespace_list | length > 0 
+      vars:
+        existing_oadp_backup_ns: "{{ item }}" 
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional targeted namespace processing tasks'
+      ansible.builtin.include_tasks: tasks/process-targeted-namespace-list.yml 
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP exclusion tasks'
+      ansible.builtin.include_tasks: tasks/process-oadp-exclusion-on-source-cluster.yml
+      when:
+        - not skip_oadp_exclusion is defined or not skip_oadp_exclusion | bool
+      vars:
+        namespace_list: "{{ updated_namespaces_to_backup }}"
+
     - name: '{{ ansible_name_module }} | import_tasks | Import additional MCP pause tasks'
       ansible.builtin.include_tasks: tasks/process-mcp-pausing-unpausing.yml
       when:
@@ -151,4 +172,3 @@
           vars:
             unpause_mcp: 'false'
             backup_name: '{{ default_backup_name }}'
-

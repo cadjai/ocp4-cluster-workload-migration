@@ -1,0 +1,69 @@
+---
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP subscription cr'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get sub -n  {{ existing_oadp_backup_ns }} --no-headers | grep oadp | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_sub_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP sub if it exist in namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} delete sub {{ oadp_sub_exists.stdout }} -n {{ existing_oadp_backup_ns }}
+  ignore_errors: true
+  when:
+    - oadp_sub_exists.rc is defined
+    - oadp_sub_exists.rc == 0
+    - oadp_sub_exists.stdout is defined
+    - oadp_sub_exists.stdout != ''
+  register: oadp_sub_deleted
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP OG cr namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get og -n  {{ existing_oadp_backup_ns }} --no-headers | grep oadp | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_og_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP OG if no sub exist in namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} delete og {{ oadp_og_exists.stdout }} -n {{ existing_oadp_backup_ns }}
+  ignore_errors: true
+  when:
+    - oadp_og_exists.rc is defined
+    - oadp_og_exists.rc == 0
+    - oadp_og_exists.stdout is defined
+    - oadp_og_exists.stdout != ''
+  register: oadp_og_deleted
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP DPA cr'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataprotectionapplication.oadp.openshift.io -n  {{ existing_oadp_backup_ns }} --no-headers | grep {{ dpa_cr_name_prefix }} | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_dpa_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP DPA if it exist in namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} delete dataprotectionapplication.oadp.openshift.io {{ oadp_og_exists.stdout }} -n {{ existing_oadp_backup_ns }}
+  ignore_errors: true
+  when:
+    - oadp_dpa_exists.rc is defined
+    - oadp_dpa_exists.rc == 0
+    - oadp_dpa_exists.stdout is defined
+    - oadp_dpa_exists.stdout != ''
+  register: oadp_dpa_deleted
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get all oadp workload objects'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get all -n  {{ existing_oadp_backup_ns }} --no-headers | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_all_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP workload objects if present in namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} delete $({{ openshift_cli }} get all -n  {{ existing_oadp_backup_ns }} --no-headers | awk '{print $1}') -n  {{ existing_oadp_backup_ns }} 
+  ignore_errors: true
+  when:
+    - oadp_all_exists.rc is defined
+    - oadp_all_exists.rc == 0
+    - oadp_all_exists.stdout_lines is defined
+    - oadp_all_exists.stdout_lines | length > 0
+  register: oadp_all_deleted
+
