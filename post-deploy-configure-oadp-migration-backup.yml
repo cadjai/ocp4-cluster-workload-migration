@@ -107,9 +107,6 @@
       when:
         - pause_mcp is defined
         - pause_mcp | bool 
-      vars:
-        pause_mcp: 'false'
-        unpause_mcp: 'false'
 
     - name: '{{ ansible_name_module }} | import_tasks | Import additional OADP operator install check tasks'
       ansible.builtin.import_tasks: tasks/ensure-oadp-operator-is-installed.yml

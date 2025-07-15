@@ -1,0 +1,168 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | pvc_backup_staging_dir '
+  ansible.builtin.set_fact:
+    mtc_cr_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}"
+  when:
+    - not mtc_cr_backup_staging_dir is defined or not mtc_cr_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the pvc file download stagin dir exist '
+  ansible.builtin.file:
+    path: "{{ mtc_cr_backup_staging_dir }}"
+    state: directory
+    mode: 0777
+
+- name: '{{ ansible_name_module }} | download MTC CR manifests to S3 bucket '
+  block:
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != ''
+        msg: "The AWS CLI binary is required to download the MTC CR manifest to the S3 bucket "
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+
+    - name: '{{ ansible_name_module }} | command:shell | copy MTC CR manifest directory to S3 bucket'
+      ansible.builtin.shell: >
+        {{ aws_cli }} s3 --region {{ mig_cntl_storagerepo_bucket_region | default('us-east-1', true) }} \ 
+          s3://{{ mig_cntl_storagerepo_bucket_name }}/mtc-overlimit-cr-manifests/ \
+          sync {{ mtc_cr_backup_staging_dir }}/ \
+         --endpoint-url https://{{ mig_cntl_storagerepo_s3endpoint_url }} --no-verify-ssl
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ mig_cntl_storagerepo_bucket_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ mig_cntl_storagerepo_bucket_access_secret }}"
+      register: manifests_uploaded
+
+- name: '{{ ansible_name_module }} | Apply MTC CR manifests '
+  block:
+    - name: '{{ ansible_name_module }} | find | Find all Mig Plan Manifests'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}"
+        recurse: yes
+        patterns: '*-mtc-migration-plan-customresource.yml'
+      register: mig_plan_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | Mig Plan Manifest paths'
+      ansible.builtin.set_fact:
+        mig_plan_manifest_file_paths: "{{ mig_plan_manifests.files | map(attribute='path') | list }}"
+      when:
+        - mig_plan_manifests is defined
+        - mig_plan_manifests.files is defined
+        - mig_plan_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all Mig Plan Manifest paths output '
+      ansible.builtin.debug:
+        var: mig_plan_manifest_file_paths
+        verbosity: 2
+      when:
+        - mig_plan_manifest_file_paths is defined
+        - mig_plan_manifest_file_paths | length > 0
+
+    - name: '{{ ansible_name_module }} | find | Find all Mig Migration CR manifests'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/roles"
+        recurse: yes
+        patterns: '*-mtc-migration-migmigration-cr.yml'
+      register: mig_migration_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | roles file paths'
+      ansible.builtin.set_fact:
+        mig_migration_manifest_file_paths: "{{ mig_migration_manifests.files | map(attribute='path') | list }}"
+      when:
+        - mig_migration_manifests is defined
+        - mig_migration_manifests.files is defined
+        - mig_migration_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all Mig Migration CR manifests paths output '
+      ansible.builtin.debug:
+        var: mig_migration_manifest_file_paths
+        verbosity: 2
+      when:
+        - mig_migration_manifest_file_paths is defined
+        - mig_migration_manifest_file_paths | length > 0
+
+    - name: '{{ ansible_name_module }} | find | Find all Mig Analytic CR Manifests'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/pvs"
+        recurse: yes
+        patterns: '*-mtc-migration-mig-analytic.yml'
+      register: mig_analytic_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | Mig Analytic CR Manifest paths'
+      ansible.builtin.set_fact:
+        mig_analytic_manifest_file_paths: "{{ mig_analytic_manifests.files | map(attribute='path') | list }}"
+      when:
+        - mig_analytic_manifests is defined
+        - mig_analytic_manifests.files is defined
+        - mig_analytic_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | Mig Plan manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }}
+      loop: "{{ mig_plan_manifest_file_paths }}"
+      when:
+        - mig_plan_manifest_file_paths is defined
+        - mig_plan_manifest_file_paths | length > 0
+      register: mig_plan_manifests_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+      ansible.builtin.wait_for:
+        timeout: '{{ 90*(mig_plan_manifest_file_paths | length) }}'
+      delegate_to: localhost
+
+    ### wait for Mig Plan to have a ready state before applying the other CRs
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | get migplan state'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get migplan {{ mig_cntl_migplan_name }} --no-headers -n openshift-migration | awk '{print $1}')
+      loop: "{{ mig_plan_manifest_file_paths }}"
+      vars:
+        mig_cntl_migplan_name: "{{ (item | basename).split('-mtc-migration-plan-customresource')[0] }}"
+      register: mig_plan_state
+      until:
+        - mig_plan_state.rc is defined
+        - mig_plan_state.rc == 0
+        - mig_plan_state.stdout is defined
+        - mig_plan_state.stdout != ''
+        - mig_plan_state.stdout | bool
+      retries: 10
+      delay: 30
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | Mig Migration manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }}
+      loop: "{{ mig_migration_manifest_file_paths }}"
+      when:
+        - mig_migration_manifest_file_paths is defined
+        - mig_migration_manifest_file_paths | length > 0
+      register: mig_migration_manifests_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+      ansible.builtin.wait_for:
+        timeout: '{{ 90*(mig_migration_manifest_file_paths | length) }}'
+      delegate_to: localhost
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | Mig Analytics manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }}
+      loop: "{{ mig_analytic_manifest_file_paths }}"
+      when:
+        - mig_analytic_manifest_file_paths is defined
+        - mig_analytic_manifest_file_paths | length > 0
+      register: mig_analytic_manifests_applied
+
+    - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+      ansible.builtin.wait_for:
+        timeout: '{{ 90*(mig_analytic_manifest_file_paths | length) }}'
+      delegate_to: localhost
+

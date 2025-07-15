@@ -1,0 +1,81 @@
+- name: ' Konductor | Provision UPI Infra | mtc-targeted-namespace-list-retrieval.yml'
+  hosts: localhost
+  vars_files:
+    - 'vars/vault.yml'
+    - 'vars/global.yml'
+    - 'vars/mtc-migration.yml'
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+    module: "Retieve Namespace Info"
+    ansible_name_module: " Post Cluster Installation | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | validate required variables '
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_console_url is defined
+              - src_mtc_cluster_console_url != ''
+            msg: "The Source cluster login URL is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API Token is defined'
+          ansible.builtin.assert:
+            that:
+              - src_mtc_cluster_token is defined
+              - src_mtc_cluster_token != ''
+            msg: "The Source cluster login Token is required for SA Token Retrieval"
+          when:
+            - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+        - name: '{{ ansible_name_module }} | set_fact | namespacelist '
+          ansible.builtin.set_fact:
+            src_mtc_cluster_console_port: '6443'
+          when:
+            - not src_mtc_cluster_console_port is defined or src_mtc_cluster_console_port == ''
+
+  tasks:
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Info retrievl additional tasks'
+      ansible.builtin.include_tasks: tasks/retrieve-satoken-from-mtc-source-cluster.yml
+      when:
+        - retrieve_satoken is defined
+        - retrieve_satoken | bool
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace List retrievl additional tasks'
+      ansible.builtin.include_tasks: tasks/retrieve-namespacelist-from-mtc-source-cluster.yml
+      when:
+        - retrieve_nslist is defined
+        - retrieve_nslist | bool
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs in cluster '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get pvc -A  -o json | jq -r '.items[] | select([.status.phase] | inside(["Bound"]))' | jq -s '. | group_by(.metadata.namespace) | map({namespace: .[0].metadata.namespace, count: length} | select(.count >= 26))'
+      register: namespaces_with_bound_pvcs_over_limit_with_count
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print first half of bound pvcs namespaces output '
+      ansible.builtin.debug:
+        var: item
+        verbosity: 2
+      loop: "{{ namespaces_with_bound_pvcs_over_limit_with_count.stdout_lines }}"
+      when:
+        - namespaces_with_bound_pvcs_over_limit_with_count is defined
+        - namespaces_with_bound_pvcs_over_limit_with_count.stdout_lines is defined
+        - namespaces_with_bound_pvcs_over_limit_with_count.stdout_lines | length > 0
+    
+    - name: '{{ ansible_name_module }} | set_fact | set namespaces_with_bound_pvcs_over_limit_with_count in array format'
+      ansible.builtin.set_fact:
+        namespaces_with_bound_pvcs_over_limit_list: '{{ namespaces_with_bound_pvcs_over_limit_with_count.stdout | from_json | list }}'
+      when:
+        - namespaces_with_bound_pvcs_over_limit_with_count is defined
+        - namespaces_with_bound_pvcs_over_limit_with_count.stdout_lines is defined
+        - namespaces_with_bound_pvcs_over_limit_with_count.stdout_lines | length > 0
+
+    - name: '{{ ansible_name_module }} | import_tasks | Import Source MTC Cluster Namespace with over limit pvcs additional tasks'
+      ansible.builtin.include_tasks: tasks/create-mtc-crs-for-namespaces-with-pvcs-overlimit-from-source-cluster.yml 
+      when:
+        - namespaces_with_bound_pvcs_over_limit_list is defined
+        - namespaces_with_bound_pvcs_over_limit_list | length > 0
+
+

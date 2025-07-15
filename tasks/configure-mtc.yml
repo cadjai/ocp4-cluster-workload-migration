@@ -32,13 +32,6 @@
           - default_mig_cntl_migplan_name != '' 
         msg: "The MIG Plan name is required to add the Mig Plan manifests"
 
-    - name: '{{ ansible_name_module }} | import_tasks | Import Source Cluster Namespace List retrievl additional tasks'
-      ansible.builtin.import_tasks: tasks/retrieve-namespacelist-from-mtc-source-cluster.yml 
-
-    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
-      ansible.builtin.set_fact:
-        updated_namespaces_to_backup: '{{ namespace_list_targeted }}'
-
     - name: '{{ ansible_name_module }} | assert | the List of Namespace to migrate is defined'
       ansible.builtin.assert:
         that:
@@ -46,6 +39,10 @@
           - namespace_list != ''
           - namespace_list | length > 0 
         msg: "The List of Namespaces to migrate is required to add the Mig Plan manifests"
+
+    - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
+      ansible.builtin.set_fact:
+        updated_namespaces_to_backup: '{{ namespace_list }}'
 
     ### Process Mig plan by namespace
     - name: '{{ ansible_name_module }} | Add Migration Plan Resources to MTC  '
@@ -101,9 +98,9 @@
       register: backup_bundle_processed
 
 ### Process Mig plan for namespaces with over the limit pvcs
-- name: '{{ ansible_name_module }} | Add Migration Plan Resources to MTC  '
-  ansible.builtin.include_tasks: tasks/process-mtc-namespace-with-pvcs-overlimit-from-source-cluster.yml 
+- name: '{{ ansible_name_module }} | Process MTC Migration for namespace with pvc over limit  '
+  ansible.builtin.include_tasks: tasks/process-mtc-crs-for-namespaces-with-pvcs-overlimit-from-source-cluster.yml 
   when:
-    - namespaces_with_bound_pvcs_over_limit is defined
-    - namespaces_with_bound_pvcs_over_limit | length > 0 
+    - process_namespaces_with_over_limit is defined
+    - process_namespaces_with_over_limit | bool 
 

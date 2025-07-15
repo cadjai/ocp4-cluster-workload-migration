@@ -40,7 +40,7 @@ mig_cntl_cluster_internal_registry_insecure: 'true'
 mig_cntl_cluster_token_sa_secret_name: ''
 mig_cntl_cluster_token_sa_secret_ns: ''
 mig_cntl_migplan_name: ''
-mig_cntl_migration_name: ''
+default_mig_cntl_migplan_name: ''
 mig_cntl_miganalytic_analyze_image_count: 'false'
 mig_cntl_miganalytic_analyze_k8resources: 'false'
 mig_cntl_miganalytic_analyze_pv_capacity: 'false'
@@ -49,6 +49,7 @@ mig_cntl_migration_apply_stage: 'true'
 mig_cntl_migration_migrate_state: 'false'
 mig_cntl_migration_quiesce_pods: 'false'
 retrieve_satoken: 'false'
+retrieve_nslist: 'false'
 namespace_list: []
 add_replication_repo: 'true'
 add_migration_plan: 'true'
@@ -61,8 +62,11 @@ excluded_ns:
   - "local-quay"
   - "multicluster-engine"
   - "nvidia-gpu-*"
+  - "open-cluster-management"
   - "open-cluster-management-*"
   - "openshift-*"
+  - "sso"
+  - "sso-rhbk"
   - "redhat-marketplace"
 mig_cntl_restic_timeout: '4h'
 mig_cntl_live_migration: 'false'
@@ -72,5 +76,6 @@ mig_cntl_rsync_backoff_limit: '40'
 apply_oadp_exclusion_label: 'true'
 oadp_exclusion_add_label: 'velero.io/exclude-from-backup=true'
 oadp_exclusion_remove_label: 'velero.io/exclude-from-backup-'
-namespace_list_targeted: '{{ namespace_list }}'
 perform_migration: 'false'
+process_backup_per_namespace: 'true'
+process_namespaces_with_over_limit: 'false'

@@ -32,16 +32,24 @@
               - oadp_s3_bucket is defined and oadp_s3_bucket != ''
             msg: " the oadp_s3_bucket must be set to a valid S3 bucket name  "
 
-    - name: '{{ ansible_name_module }} | {{ openshift_cli }} whoami | check if there is valid session'
-      ansible.builtin.command: >
-        {{ openshift_cli }} whoami
-      ignore_errors: yes
-      register: existing_session
+    - name: Install required pip library
+      pip:
+        name: openshift
+        state: present
 
-    - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
-      import_tasks: ../roles/ocp-cluster-login/tasks/main.yml
-      when:
-        - existing_session.rc > 0
+    - name: Ensure Proper Python dependency is installed for Openshift
+      python_requirements_facts:
+        dependencies:
+          - openshift
+          - requests
+
+    - name: Authenticate with the API
+      command: >
+        {{ openshift_cli }} login \
+          -u {{ ocp_cluster_user }} \
+          -p {{ ocp_cluster_user_password }} \
+          --insecure-skip-tls-verify=true {{ ocp_cluster_console_url }}:{{ ocp_cluster_console_port | d('6443', true) }}
+      register: login_out
 
   tasks:
     - name: '{{ ansible_name_module }} | Retrieve Infrastructure Name'
