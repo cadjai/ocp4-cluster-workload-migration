@@ -33,15 +33,21 @@ A quick recap:
 Use the provided playbooks to perform an MTC migration. 
 As already mentioned above MTC is a one step process for the migration transaction which is run from the destination cluster, even though the provided playbook can be run several times or at least twice, once to setup the MTC operator and related CRs and once to trigger the migration by applying the appropriate CR to kick off the migration. To perform an MTC migration use the provided playbooks as follows:
 1. Ensure the source cluster meets the required prerequisites before starting the process. Run the provided `validate-source-cluster-pre-backup.yml`playbook to ensure the source cluster  is ready for the migration.
+> [!WARNING]
+> This playbook should only be run against the target backup cluster. 
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
 ```
 2. Ensure the destination cluster also meets the required prerequisites before starting the process. Run the provided `validate-destination-cluster-info-pre-restore.yml` playbook to ensure the cluster is ready for the migration.
+> [!WARNING]
+> This playbook should only be run against the destination cluster. 
 ```
 ansible-playbook --ask-vault-pass  -vvv validate-destination-cluster-info-pre-restore.yml
 ```
 3. Review the results of the previous steps to ensure that the clusters are ready for the migration. 
 4. Ensure you have the storage location bucket information readily available to use. If you don't already have a bucket use the provided `provision-backup-s3-bucket-on-odf.yml` playbook to set an OBC and bucket on ODF as well and retrieve the associated information. Otherwise use the `retrieve-backup-s3-bucket-on-odf.yml` playbook to fetch the S3 bucket information from ODF. Run either of the playbooks as follows:
+> [!WARNING]
+> This playbook should only be run against the cluster hosting the ODF S3 not the target backup cluster. 
 ```
 ansible-playbook --ask-vault-pass  -vvv provision-backup-s3-bucket-on-odf.yml 
 ```
@@ -49,7 +55,15 @@ or
 ```
 ansible-playbook --ask-vault-pass  -vvv retrieve-backup-s3-bucket-on-odf.yml
 ```
-5. Perform the MTC migration by running the provided `post-deploy-configure-mtc-migration.yml` playbook. This playbook can be run in several ways. For example if you don't have the required information from the source cluster (e.g. SA token, targeted namespace list) you set the appropriate variables for this playbook to fetch that information and use it to configure MTC. Also it can be used to configure the necessary MTC components (CRs) up to the migration plan without triggering the migration and then run again to perform the migration. It is recommended to run the playbook to deploy and configure MTC like described above by running the playbook like below:
+> [!WARNING]
+> This playbook should only be run against the target cluster. 
+5. Configure the target namespace list by running the provided `migration-mtc-namespace-list-retrieval.yml` playbook. This playbook will retrieve the list of namespace and print it to the output so that it can be copied to set the value of the `namespace_list` variable in the `mtc-migration.yml` variable file on the bastion connected to the destination cluster. It will also generate the MTC CRS manifests for the namespaces with total number of bound PVCs over the limit of volume that can be attached to a single rsync pod (using 26 as the max currently). 
+```
+ansible-playbook --ask-vault-pass  -vvv -e retrieve_satoken=false -e src_mtc_cluster_console_url=<src-cluster-api> -e skip_api_login_logout=true migration-mtc-namespace-list-retrieval.yml 
+```
+> [!NOTE]
+> The following step is to be performed against the destination cluster.  
+6. Perform the MTC migration by running the provided `post-deploy-configure-mtc-migration.yml` playbook. This playbook can be run in several ways. For example if you don't have the required information from the source cluster (e.g. SA token, targeted namespace list) you set the appropriate variables for this playbook to fetch that information and use it to configure MTC. Also it can be used to configure the necessary MTC components (CRs) up to the migration plan without triggering the migration and then run again to perform the migration. It is recommended to run the playbook to deploy and configure MTC like described above by running the playbook like below:
 ```
 ansible-playbook --ask-vault-pass  -vvv -e retrieve_satoken=false -e add_mig_cluster=true -e add_replication_repo=true -e add_migration_plan=true -e perform_migration=false  -e src_mtc_cluster_console_url=<src-cluster-api> -e skip_api_login_logout=true  post-deploy-configure-mtc-migration.yml
 ```
@@ -84,11 +98,11 @@ ansible-playbook --ask-vault-pass  -vvv retrieve-backup-s3-bucket-on-odf.yml
 ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-pre-backup.yml
 ```
 3. Review the output of the previous step and ensure any necessary steps are taken to remediate any failures.
-4. Optional step, If you have alist of namespace to use or if you want to make further modifications to the list retrieved by the provided playbook, then ensure you have an updated list of targeted namespaces. 
+4. Optional step, If you have a list of namespace to use or if you want to make further modifications to the list retrieved by the provided playbook, then ensure you have an updated list of targeted namespaces. 
 ```
 ansible-playbook --ask-vault-pass  -vvv  migration-targeted-namespace-list-retrieval.yml
 ```
-5. Ensure there are no objects in invalid state that can cause the backups to fail. For example invalid imagestreams or pending PVCs can cause failures. Use the `process-oadp-exclusion-on-source-cluster-pre-backup.yml`playbook to excluse any objects in the cluster that meets that requirement. For the time being the provided playbook only excludes unbound PVCs and imagestreams with certain error conditions, non running pods, complete jobs but can be updated to add more resources to be excluded. Run the playbook as follows:
+5. Optional Step. This playbookis already include with the main playbook but can be skipped (e.g. in case you just run it and it failed post exclusion labelling and you don't want to rerun that step again). Ensure there are no objects in invalid state that can cause the backups to fail. For example invalid imagestreams or pending PVCs can cause failures. Use the `process-oadp-exclusion-on-source-cluster-pre-backup.yml`playbook to excluse any objects in the cluster that meets that requirement. For the time being the provided playbook only excludes unbound PVCs and imagestreams with certain error conditions, non running pods, complete jobs but can be updated to add more resources to be excluded. Run the playbook as follows:
 ```
 ansible-playbook --ask-vault-pass  -vvv  process-oadp-exclusion-on-source-cluster-pre-backup.yml
 ```
@@ -106,9 +120,6 @@ ansible-playbook --ask-vault-pass  -vvv validate-source-cluster-post-backup.yml
 8. Optional steps. In the event of failures use the provided helper playbooks to perform resources cleanup. For examle if you need to cleanup the OADP deployment you can use the `undeploy-oadp-migration-application.yml`. Similarly, if you need to remove failed backup CRs you can run the `remove-failed-backup-from-source-cluster.yml` playbook.
 
 Note that to successfully run each of the playboks referenced above it is important to either update the appropriate variables either through the oadp-migration.yml variable file or by passing the variables as extra argument to the `ansible-playbook`commands.
-
-> [!TIP]
-> Given that OADP backup using the CSI snapshot and Data Mover only works for workloads with bound PVCs, a set of tasks has been added to do download worload related manifests for all the namespace that were not selected for backup so that if necessary one can use those manifests to recreate the workload related kubernetes object in the new cluster.
 
 
 ### OADP Cluster Workload Restore
@@ -134,6 +145,10 @@ ansible-playbook --ask-vault-pass  -vvv post-deploy-configure-oadp-migration-res
 6. Optional steps. In the event of failures use the provided helper playbooks to perform resources cleanup. For examle if you need to cleanup the OADP deployment you can use the `undeploy-oadp-migration-application.yml`. 
 
 Note that for each of the playbook steps above you need to ensure the appropriate variables are provided either through the CLI using the -e option for the `ansible-playbook` command or by updating the `oadp-migration.yml` variable file.
+
+
+> [!TIP]
+> Given that OADP backup using the CSI snapshot and Data Mover only works for workloads with bound PVCs, a set of tasks and playbooks have been added to do download worload related manifests for all the namespaces that were not selected for backup so that if necessary one can use those manifests to recreate the workloads related kubernetes objects in the new cluster.
 
 
 ## Raw Persistence manifests Cluster Workload Migration Flow
