@@ -34,7 +34,7 @@
 
     - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
       ansible.builtin.wait_for:
-        timeout: 90
+        timeout: 5
       delegate_to: localhost
 
     ### wait for Mig Plan to have a ready state before applying the other CRs

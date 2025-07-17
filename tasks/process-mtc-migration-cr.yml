@@ -16,59 +16,69 @@
       - mig_plan_state.stdout | bool 
     msg: "The MigPlan CR is required and in Ready state to perfrom a migration "
 
-- name: '{{ ansible_name_module }} | template | Render Mig Plan manifests '
+- name: '{{ ansible_name_module }} | template | Render Mig migration CR manifests '
   ansible.builtin.template:
-    src: "{{ item }}"
-    dest: "{{ staging_dir | d('/tmp', true) }}/{{ mig_cntl_migplan_name }}-{{ (item.split('/')[1]).split('.j2')[0] }}"
+    src: "templates/mtc-migration-migmigration-customresource.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ mig_cntl_migplan_name }}-mtc-migration-migmigration-customresource.yml"
     force: yes
-  loop:
-    - templates/mtc-migration-migmigration-customresource.yml.j2
-    - templates/mtc-migration-mig-analytic.yml.j2 
-  register: mig_plan_crs_copied
+  register: mig_migration_crs_copied
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print output rendered manifests'
   ansible.builtin.debug:
-    var: item
+    var: mig_migration_crs_copied
     verbosity: 2
-  loop: "{{ mig_plan_crs_copied.results }}"
   when:
-    - mig_plan_crs_copied is defined
-    - mig_plan_crs_copied.results is defined
-    - mig_plan_crs_copied.results | length > 0 
-    - item.dest is defined
-    - item.state is defined
-    - "'file' in item.state"
+    - mig_migration_crs_copied is defined
+    - mig_migration_crs_copied.dest is defined
+    - mig_migration_crs_copied.state is defined
+    - "'file' in mig_migration_crs_copied.state"
 
 - name: '{{ ansible_name_module }} | create Mig Plan related Manifests'
   when:
-    - mig_plan_crs_copied is defined
-    - mig_plan_crs_copied.results is defined
-    - mig_plan_crs_copied.results | length > 0 
+    - mig_migration_crs_copied is defined
   block:
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Mig Migration Manifest'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ item.dest }}
-      loop: "{{ mig_plan_crs_copied.results }}"
+        {{ openshift_cli }} apply -f {{ mig_migration_crs_copied.dest }}
       when:
-        - item.dest is defined
-        - item.state is defined
-        - "'file' in item.state"
-        - "'migmigration' in item.dest"
+        - mig_migration_crs_copied.dest is defined
+        - mig_migration_crs_copied.state is defined
+        - "'file' in mig_migration_crs_copied.state"
+        - "'migmigration' in mig_migration_crs_copied.dest"
       register: migmigration_configs_applied
 
     - name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
       ansible.builtin.wait_for:
-        timeout: 90
+        timeout: 15
       delegate_to: localhost
 
+- name: '{{ ansible_name_module }} | template | Render Mig Analytic CR manifests '
+  ansible.builtin.template:
+    src: "templates/mtc-migration-mig-analytic.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ mig_cntl_migplan_name }}-mtc-migration-mig-analytic.yml"
+    force: yes
+  register: mig_analytic_cr_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print output rendered manifests'
+  ansible.builtin.debug:
+    var: mig_analytic_cr_copied 
+    verbosity: 2
+  when:
+    - mig_analytic_cr_copied is defined
+    - mig_analytic_cr_copied.dest is defined
+    - mig_analytic_cr_copied.state is defined
+
+- name: '{{ ansible_name_module }} | create Mig Analythic related Manifests'
+  when:
+    - mig_analytic_cr_copied is defined
+  block:
     - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create Mig Analytic  Manifest'
       ansible.builtin.command: >
-        {{ openshift_cli }} apply -f {{ item.dest }}
-      loop: "{{ mig_plan_crs_copied.results }}"
+        {{ openshift_cli }} apply -f {{ mig_analytic_cr_copied.dest }}
       when:
-        - item.dest is defined
-        - item.state is defined
-        - "'file' in item.state"
-        - "'analytic' in item.dest"
+        - mig_analytic_cr_copied.dest is defined
+        - mig_analytic_cr_copied.state is defined
+        - "'file' in mig_analytic_cr_copied.state"
+        - "'analytic' in mig_analytic_cr_copied.dest"
       register: mig_anlytic_configs_applied
 
