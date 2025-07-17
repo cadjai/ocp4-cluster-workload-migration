@@ -24,6 +24,11 @@
     - "'file' in  bucket_obc_config_copied.state"
   register: bucket_obc_config_applied
 
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 90
+  delegate_to: localhost
+
 - name: '{{ ansible_name_module }} | validate required variables '
   when:
     - bucket_obc_config_applied is defined

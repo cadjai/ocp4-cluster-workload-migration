@@ -51,6 +51,18 @@
             msg: "The S3 bucket name is required to create the bucket"
 
   tasks:
+    - name: '{{ ansible_name_module }} | set_fact | obc_bucket_class '
+      ansible.builtin.set_fact:
+        obc_bucket_class: 'noobaa-default-bucket-class'
+      when:
+        - not obc_bucket_class is defined or obc_bucket_class == ''
+
+    - name: '{{ ansible_name_module }} | set_fact | obc_storage_class'
+      ansible.builtin.set_fact:
+        obc_storage_class: 'openshift-storage.noobaa.io'
+      when:
+        - not obc_storage_class is defined or obc_storage_class == ''
+
     - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
       ansible.builtin.import_tasks: tasks/create-obc-on-odf-cluster.yml 
 

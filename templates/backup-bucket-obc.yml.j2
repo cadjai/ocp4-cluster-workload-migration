@@ -5,7 +5,7 @@ metadata:
   namespace: {{ backup_bucket_namespace }}
 spec:
   additionalConfig:
-    bucketclass: noobaa-default-bucket-class
+    bucketclass: {{ obc_bucket_class | default('noobaa-default-bucket-class', true) }}
   bucketName: {{ backup_bucket_name }} 
-  storageClassName: openshift-storage.noobaa.io
+  storageClassName: {{ obc_storage_class | default('openshift-storage.noobaa.io', true) }}
 
