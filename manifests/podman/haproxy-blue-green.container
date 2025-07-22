@@ -1,0 +1,63 @@
+# HAProxy Blue-Green Deployment Quadlet Container Configuration
+# Place this file in /etc/containers/systemd/ (system-wide) or ~/.config/containers/systemd/ (user)
+# Then run: systemctl daemon-reload && systemctl start haproxy-blue-green.service
+
+[Unit]
+Description=HAProxy Blue-Green Load Balancer
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=%t/containers
+
+[Container]
+Image=docker.io/haproxy:2.8
+ContainerName=haproxy-blue-green
+
+# Port mappings
+PublishPort=80:80
+PublishPort=443:443
+PublishPort=8404:8404
+
+# Volume mounts - create these directories first:
+# sudo mkdir -p /opt/haproxy/{config,ssl}
+# sudo chown -R 1000:1000 /opt/haproxy
+Volume=/opt/haproxy/config:/usr/local/etc/haproxy:bind
+Volume=/opt/haproxy/ssl:/etc/ssl:bind
+
+# Network configuration
+Network=haproxy-network
+
+# Environment variables
+Environment=HAPROXY_CONFIG=/usr/local/etc/haproxy/haproxy.cfg
+
+# Security and resource limits
+User=haproxy
+Group=haproxy
+ReadOnlyRootFilesystem=yes
+NoNewPrivileges=yes
+CapDrop=ALL
+CapAdd=NET_BIND_SERVICE
+CapAdd=CHOWN
+CapAdd=SETGID
+CapAdd=SETUID
+
+# Logging
+LogDriver=journald
+LogOptions=tag="haproxy-blue-green"
+
+# Health check
+HealthCmd=haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+HealthInterval=30s
+HealthRetries=3
+HealthStartPeriod=10s
+HealthTimeout=10s
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target default.target 

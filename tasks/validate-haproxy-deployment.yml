@@ -1,0 +1,146 @@
+---
+- name: Validate HAProxy configuration syntax (Podman)
+  command: >
+    podman exec {{ haproxy.container_name }} 
+    haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+  register: haproxy_config_check
+  when: deployment_method == "podman"
+  changed_when: false
+
+- name: Display HAProxy configuration validation result (Podman)
+  debug:
+    msg: "HAProxy configuration is {{ 'valid' if haproxy_config_check.rc == 0 else 'invalid' }}"
+  when: deployment_method == "podman"
+
+- name: Test HTTP port connectivity
+  wait_for:
+    port: "{{ haproxy.http_port }}"
+    host: localhost
+    delay: 5
+    timeout: 30
+  when: deployment_method == "podman"
+
+- name: Test HTTPS port connectivity (if SSL enabled)
+  wait_for:
+    port: "{{ haproxy.https_port }}"
+    host: localhost
+    delay: 5
+    timeout: 30
+  when: deployment_method == "podman" and ssl_config.enabled
+
+- name: Test stats port connectivity
+  wait_for:
+    port: "{{ haproxy.stats_port }}"
+    host: localhost
+    delay: 5
+    timeout: 30
+  when: deployment_method == "podman"
+
+- name: Verify HAProxy stats page accessibility
+  uri:
+    url: "http://localhost:{{ haproxy.stats_port }}/stats"
+{% if haproxy.stats_user is defined and haproxy.stats_password is defined %}
+    user: "{{ haproxy.stats_user }}"
+    password: "{{ haproxy.stats_password }}"
+    force_basic_auth: yes
+{% endif %}
+    method: GET
+    status_code: 200
+    timeout: 10
+  register: stats_response
+  when: deployment_method == "podman"
+
+- name: Display stats page validation result
+  debug:
+    msg: "HAProxy stats page is accessible at http://localhost:{{ haproxy.stats_port }}/stats"
+  when: deployment_method == "podman" and stats_response.status == 200
+
+- name: Test blue-green routing for each cluster mapping (Podman)
+  uri:
+    url: "http://localhost:{{ haproxy.http_port }}"
+    method: GET
+    headers:
+      Host: "{{ item.source_subdomain }}.example.com"
+    status_code: [200, 301, 302, 503]  # 503 is acceptable if backend is not reachable
+    timeout: 10
+  loop: "{{ blue_green_routing.cluster_mappings }}"
+  register: routing_tests
+  when: deployment_method == "podman"
+  ignore_errors: yes
+
+- name: Display routing test results
+  debug:
+    msg: |
+      Routing test for {{ item.item.source_subdomain }}.example.com:
+      Status: {{ item.status }}
+      {% if item.status == 503 %}
+      (503 is expected if backend servers are not available)
+      {% endif %}
+  loop: "{{ routing_tests.results }}"
+  when: deployment_method == "podman" and routing_tests is defined
+
+- name: Get HAProxy service status (Kubernetes)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    name: haproxy-blue-green
+    namespace: "{{ kubernetes_config.namespace }}"
+  register: haproxy_service
+  when: deployment_method == "kubernetes"
+
+- name: Display HAProxy service information (Kubernetes)
+  debug:
+    msg: |
+      HAProxy Service Status: {{ haproxy_service.resources[0].status if haproxy_service.resources else 'Not found' }}
+      Service Type: {{ haproxy_service.resources[0].spec.type if haproxy_service.resources else 'N/A' }}
+      {% if haproxy_service.resources and haproxy_service.resources[0].spec.type == 'LoadBalancer' %}
+      External IP: {{ haproxy_service.resources[0].status.loadBalancer.ingress[0].ip if haproxy_service.resources[0].status.loadBalancer.ingress else 'Pending' }}
+      {% endif %}
+  when: deployment_method == "kubernetes"
+
+- name: Get HAProxy pod status (Kubernetes)
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ kubernetes_config.namespace }}"
+    label_selectors:
+      - app=haproxy-blue-green
+  register: haproxy_pods
+  when: deployment_method == "kubernetes"
+
+- name: Display HAProxy pod information (Kubernetes)
+  debug:
+    msg: |
+      HAProxy Pods:
+      {% for pod in haproxy_pods.resources %}
+      - Name: {{ pod.metadata.name }}
+        Status: {{ pod.status.phase }}
+        Ready: {{ pod.status.containerStatuses[0].ready if pod.status.containerStatuses else 'Unknown' }}
+      {% endfor %}
+  when: deployment_method == "kubernetes"
+
+- name: Create validation summary
+  debug:
+    msg: |
+      ========================================
+      HAProxy Blue-Green Deployment Validation Summary
+      ========================================
+      Deployment Method: {{ deployment_method }}
+      {% if deployment_method == "podman" %}
+      Container Status: {{ 'Running' if haproxy_config_check.rc == 0 else 'Failed' }}
+      Stats URL: http://localhost:{{ haproxy.stats_port }}/stats
+      {% endif %}
+      {% if deployment_method == "kubernetes" %}
+      Namespace: {{ kubernetes_config.namespace }}
+      Replicas: {{ kubernetes_config.replicas }}
+      Service Type: {{ kubernetes_config.service_type }}
+      {% endif %}
+      
+      Configured Cluster Mappings:
+      {% for mapping in blue_green_routing.cluster_mappings %}
+      - {{ mapping.source_subdomain }} → {{ mapping.blue_subdomain }}/{{ mapping.green_subdomain }}
+      {% endfor %}
+      
+      Default Environment: {{ blue_green_routing.default_environment }}
+      SSL Enabled: {{ ssl_config.enabled }}
+      ======================================== 

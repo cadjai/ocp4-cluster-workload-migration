@@ -1,0 +1,16 @@
+# HAProxy Domain Mapping for Blue-Green Deployment
+# Format: source_domain backend_name
+# This file maps incoming hostnames to backend services
+
+{% for mapping in blue_green_routing.cluster_mappings %}
+# Mapping for {{ mapping.source_subdomain }} environment
+{{ mapping.source_subdomain }}.* {{ mapping.blue_subdomain if blue_green_routing.default_environment == 'blue' else mapping.green_subdomain }}
+
+# Explicit blue/green mappings
+{{ mapping.blue_subdomain }}.* {{ mapping.blue_subdomain }}
+{{ mapping.green_subdomain }}.* {{ mapping.green_subdomain }}
+
+{% endfor %}
+
+# Default fallback
+.* {{ blue_green_routing.cluster_mappings[0].blue_subdomain if blue_green_routing.default_environment == 'blue' else blue_green_routing.cluster_mappings[0].green_subdomain }} 

@@ -1,0 +1,21 @@
+# HAProxy Blue-Green Network Configuration
+[Unit]
+Description=HAProxy Blue-Green Network
+Documentation=man:podman-systemd.unit(5)
+
+[Network]
+NetworkName={{ podman_config.network_name }}
+Subnet=172.20.0.0/24
+Gateway=172.20.0.1
+IPRange=172.20.0.0/24
+Driver=bridge
+
+# DNS configuration
+DNS=8.8.8.8
+DNS=8.8.4.4
+
+# Network options
+Options=isolate=false
+
+[Install]
+WantedBy=multi-user.target default.target 

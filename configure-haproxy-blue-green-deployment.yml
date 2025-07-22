@@ -1,0 +1,25 @@
+---
+- name: Configure HAProxy for Blue-Green Deployment
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  vars_files:
+    - vars/global.yml
+    - vars/haproxy-blue-green.yml
+  handlers:
+    - import_tasks: handlers/haproxy-blue-green.yml
+  
+  tasks:
+    - name: Include HAProxy configuration tasks
+      include_tasks: tasks/configure-haproxy-blue-green.yml
+      
+    - name: Deploy HAProxy container (Podman)
+      include_tasks: tasks/deploy-haproxy-podman.yml
+      when: deployment_method == "podman"
+      
+    - name: Deploy HAProxy container (Kubernetes)
+      include_tasks: tasks/deploy-haproxy-kubernetes.yml
+      when: deployment_method == "kubernetes"
+      
+    - name: Validate HAProxy deployment
+      include_tasks: tasks/validate-haproxy-deployment.yml 

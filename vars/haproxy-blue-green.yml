@@ -1,0 +1,111 @@
+---
+# HAProxy Blue-Green Deployment Configuration Variables
+
+# Deployment method: "podman" or "kubernetes"
+deployment_method: "podman"
+
+# HAProxy container configuration
+haproxy:
+  image: "docker.io/haproxy:2.8"
+  container_name: "haproxy-blue-green"
+  http_port: 80
+  https_port: 443
+  stats_port: 8404
+  stats_user: "admin"
+  stats_password: "changeme"
+  
+# Blue-Green routing configuration
+blue_green_routing:
+  # Default environment to route to (blue or green)
+  default_environment: "blue"
+  
+  # Cluster subdomain mappings
+  cluster_mappings:
+    - source_subdomain: "dev"
+      blue_subdomain: "dev-blue"
+      green_subdomain: "dev-green"
+    - source_subdomain: "staging"
+      blue_subdomain: "staging-blue"
+      green_subdomain: "staging-green"
+    - source_subdomain: "prod"
+      blue_subdomain: "prod-blue"
+      green_subdomain: "prod-green"
+  
+  # Backend server configurations
+  backends:
+    dev-blue:
+      servers:
+        - name: "dev-blue-1"
+          address: "dev-blue.example.com:80"
+          check: "check"
+        - name: "dev-blue-2"
+          address: "dev-blue-backup.example.com:80"
+          check: "check backup"
+    dev-green:
+      servers:
+        - name: "dev-green-1"
+          address: "dev-green.example.com:80"
+          check: "check"
+        - name: "dev-green-2"
+          address: "dev-green-backup.example.com:80"
+          check: "check backup"
+    staging-blue:
+      servers:
+        - name: "staging-blue-1"
+          address: "staging-blue.example.com:80"
+          check: "check"
+    staging-green:
+      servers:
+        - name: "staging-green-1"
+          address: "staging-green.example.com:80"
+          check: "check"
+    prod-blue:
+      servers:
+        - name: "prod-blue-1"
+          address: "prod-blue.example.com:80"
+          check: "check"
+        - name: "prod-blue-2"
+          address: "prod-blue-backup.example.com:80"
+          check: "check backup"
+    prod-green:
+      servers:
+        - name: "prod-green-1"
+          address: "prod-green.example.com:80"
+          check: "check"
+        - name: "prod-green-2"
+          address: "prod-green-backup.example.com:80"
+          check: "check backup"
+
+# SSL/TLS configuration
+ssl_config:
+  enabled: true
+  cert_path: "/etc/ssl/certs/haproxy.crt"
+  key_path: "/etc/ssl/private/haproxy.key"
+  redirect_http_to_https: true
+
+# Podman deployment configuration
+podman_config:
+  systemd_user: false
+  quadlet_path: "/etc/containers/systemd"
+  network_name: "haproxy-network"
+  volumes:
+    - source: "/opt/haproxy/config"
+      target: "/usr/local/etc/haproxy"
+      type: "bind"
+    - source: "/opt/haproxy/ssl"
+      target: "/etc/ssl"
+      type: "bind"
+
+# Kubernetes deployment configuration
+kubernetes_config:
+  namespace: "haproxy-system"
+  replicas: 2
+  service_type: "LoadBalancer"
+  image_pull_policy: "IfNotPresent"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi" 

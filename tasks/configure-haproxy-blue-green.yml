@@ -1,0 +1,103 @@
+---
+- name: Create HAProxy configuration directory
+  file:
+    path: /opt/haproxy/config
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Create HAProxy SSL directory
+  file:
+    path: /opt/haproxy/ssl
+    state: directory
+    mode: '0700'
+  become: yes
+  when: ssl_config.enabled
+
+- name: Generate HAProxy configuration file
+  template:
+    src: haproxy-blue-green.cfg.j2
+    dest: /opt/haproxy/config/haproxy.cfg
+    mode: '0644'
+    backup: yes
+  become: yes
+  notify:
+    - restart haproxy container
+
+- name: Generate HAProxy domain mapping file
+  template:
+    src: haproxy-domain-map.txt.j2
+    dest: /opt/haproxy/config/domain_map.txt
+    mode: '0644'
+    backup: yes
+  become: yes
+  notify:
+    - reload haproxy config
+
+- name: Create HAProxy error pages directory
+  file:
+    path: /opt/haproxy/config/errors
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Generate custom error pages
+  copy:
+    content: |
+      HTTP/1.0 {{ item.code }} {{ item.message }}
+      Cache-Control: no-cache
+      Connection: close
+      Content-Type: text/html
+
+      <html><body><h1>{{ item.code }} {{ item.message }}</h1>
+      <p>The requested resource is not available.</p>
+      <p>Please contact your administrator if this problem persists.</p>
+      </body></html>
+    dest: /opt/haproxy/config/errors/{{ item.code }}.http
+    mode: '0644'
+  become: yes
+  loop:
+    - { code: 400, message: "Bad Request" }
+    - { code: 403, message: "Forbidden" }
+    - { code: 408, message: "Request Time-out" }
+    - { code: 500, message: "Internal Server Error" }
+    - { code: 502, message: "Bad Gateway" }
+    - { code: 503, message: "Service Unavailable" }
+    - { code: 504, message: "Gateway Time-out" }
+
+- name: Create SSL certificate if not exists (self-signed for testing)
+  command: |
+    openssl req -x509 -newkey rsa:4096 -keyout {{ ssl_config.key_path }} \
+    -out {{ ssl_config.cert_path }} -days 365 -nodes \
+    -subj "/C=US/ST=State/L=City/O=Organization/CN=haproxy.local"
+  args:
+    creates: "{{ ssl_config.cert_path }}"
+  become: yes
+  when: ssl_config.enabled
+
+- name: Combine SSL certificate and key for HAProxy
+  shell: |
+    cat {{ ssl_config.cert_path }} {{ ssl_config.key_path }} > /opt/haproxy/ssl/haproxy.pem
+    chmod 600 /opt/haproxy/ssl/haproxy.pem
+  become: yes
+  when: ssl_config.enabled
+  notify:
+    - restart haproxy container
+
+- name: Set SELinux context for HAProxy directories (if SELinux is enabled)
+  sefcontext:
+    target: "{{ item }}"
+    setype: container_file_t
+    state: present
+  loop:
+    - "/opt/haproxy/config(/.*)?"
+    - "/opt/haproxy/ssl(/.*)?"
+  become: yes
+  when: ansible_selinux.status == "enabled"
+  ignore_errors: yes
+
+- name: Apply SELinux context
+  command: restorecon -R /opt/haproxy
+  become: yes
+  when: ansible_selinux.status == "enabled"
+  ignore_errors: yes 

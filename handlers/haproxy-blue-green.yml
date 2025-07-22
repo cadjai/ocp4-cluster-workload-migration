@@ -1,0 +1,44 @@
+---
+# HAProxy Blue-Green Deployment Handlers
+
+- name: reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: restart haproxy service
+  systemd:
+    name: haproxy-blue-green.service
+    state: restarted
+  become: yes
+
+- name: restart haproxy container
+  containers.podman.podman_container:
+    name: "{{ haproxy.container_name }}"
+    state: started
+    restart: yes
+  become: "{{ not podman_config.systemd_user }}"
+  become_user: "{{ ansible_user if podman_config.systemd_user else omit }}"
+
+- name: reload haproxy config
+  command: >
+    podman exec {{ haproxy.container_name }} 
+    kill -USR2 1
+  become: "{{ not podman_config.systemd_user }}"
+  become_user: "{{ ansible_user if podman_config.systemd_user else omit }}"
+  ignore_errors: yes
+
+- name: restart haproxy deployment (kubernetes)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: haproxy-blue-green
+        namespace: "{{ kubernetes_config.namespace }}"
+      spec:
+        template:
+          metadata:
+            annotations:
+              kubectl.kubernetes.io/restartedAt: "{{ ansible_date_time.iso8601 }}" 

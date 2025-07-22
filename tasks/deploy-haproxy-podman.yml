@@ -1,0 +1,81 @@
+---
+- name: Install Podman and required packages
+  package:
+    name:
+      - podman
+      - podman-plugins
+      - systemd
+    state: present
+  become: yes
+
+- name: Create Podman network for HAProxy
+  containers.podman.podman_network:
+    name: "{{ podman_config.network_name }}"
+    state: present
+  become: "{{ not podman_config.systemd_user }}"
+  become_user: "{{ ansible_user if podman_config.systemd_user else omit }}"
+
+- name: Create Quadlet directory
+  file:
+    path: "{{ podman_config.quadlet_path }}"
+    state: directory
+    mode: '0755'
+  become: yes
+
+- name: Generate HAProxy Quadlet container file
+  template:
+    src: haproxy-quadlet.container.j2
+    dest: "{{ podman_config.quadlet_path }}/haproxy-blue-green.container"
+    mode: '0644'
+  become: yes
+  notify:
+    - reload systemd daemon
+    - restart haproxy service
+
+- name: Generate HAProxy Quadlet network file
+  template:
+    src: haproxy-quadlet.network.j2
+    dest: "{{ podman_config.quadlet_path }}/{{ podman_config.network_name }}.network"
+    mode: '0644'
+  become: yes
+  notify:
+    - reload systemd daemon
+
+- name: Pull HAProxy container image
+  containers.podman.podman_image:
+    name: "{{ haproxy.image }}"
+    state: present
+  become: "{{ not podman_config.systemd_user }}"
+  become_user: "{{ ansible_user if podman_config.systemd_user else omit }}"
+
+- name: Reload systemd daemon to pick up Quadlet files
+  systemd:
+    daemon_reload: yes
+  become: yes
+
+- name: Start and enable HAProxy service
+  systemd:
+    name: haproxy-blue-green.service
+    state: started
+    enabled: yes
+  become: yes
+
+- name: Wait for HAProxy to start
+  wait_for:
+    port: "{{ haproxy.http_port }}"
+    host: localhost
+    delay: 5
+    timeout: 60
+
+- name: Check HAProxy stats page is accessible
+  uri:
+    url: "http://localhost:{{ haproxy.stats_port }}/stats"
+{% if haproxy.stats_user is defined and haproxy.stats_password is defined %}
+    user: "{{ haproxy.stats_user }}"
+    password: "{{ haproxy.stats_password }}"
+    force_basic_auth: yes
+{% endif %}
+    method: GET
+    status_code: 200
+  retries: 5
+  delay: 3 

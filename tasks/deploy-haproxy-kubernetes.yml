@@ -1,0 +1,179 @@
+---
+- name: Create HAProxy namespace
+  kubernetes.core.k8s:
+    name: "{{ kubernetes_config.namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+- name: Create HAProxy ConfigMap for configuration
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: haproxy-config
+        namespace: "{{ kubernetes_config.namespace }}"
+      data:
+        haproxy.cfg: |
+{{ lookup('template', 'haproxy-blue-green.cfg.j2') | indent(10, first=False) }}
+        domain_map.txt: |
+{{ lookup('template', 'haproxy-domain-map.txt.j2') | indent(10, first=False) }}
+
+- name: Create HAProxy SSL Secret (if SSL is enabled)
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: haproxy-ssl
+        namespace: "{{ kubernetes_config.namespace }}"
+      type: Opaque
+      data:
+        haproxy.crt: "{{ lookup('file', ssl_config.cert_path) | b64encode }}"
+        haproxy.key: "{{ lookup('file', ssl_config.key_path) | b64encode }}"
+  when: ssl_config.enabled
+
+- name: Create HAProxy Deployment
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: haproxy-blue-green
+        namespace: "{{ kubernetes_config.namespace }}"
+        labels:
+          app: haproxy-blue-green
+      spec:
+        replicas: "{{ kubernetes_config.replicas }}"
+        selector:
+          matchLabels:
+            app: haproxy-blue-green
+        template:
+          metadata:
+            labels:
+              app: haproxy-blue-green
+          spec:
+            containers:
+            - name: haproxy
+              image: "{{ haproxy.image }}"
+              imagePullPolicy: "{{ kubernetes_config.image_pull_policy }}"
+              ports:
+              - containerPort: 80
+                name: http
+                protocol: TCP
+              - containerPort: 443
+                name: https
+                protocol: TCP
+              - containerPort: 8404
+                name: stats
+                protocol: TCP
+              volumeMounts:
+              - name: haproxy-config
+                mountPath: /usr/local/etc/haproxy
+                readOnly: true
+{% if ssl_config.enabled %}
+              - name: haproxy-ssl
+                mountPath: /etc/ssl
+                readOnly: true
+{% endif %}
+              livenessProbe:
+                httpGet:
+                  path: /stats
+                  port: 8404
+{% if haproxy.stats_user is defined and haproxy.stats_password is defined %}
+                httpHeaders:
+                - name: Authorization
+                  value: "Basic {{ (haproxy.stats_user + ':' + haproxy.stats_password) | b64encode }}"
+{% endif %}
+                initialDelaySeconds: 30
+                periodSeconds: 10
+                timeoutSeconds: 5
+                failureThreshold: 3
+              readinessProbe:
+                httpGet:
+                  path: /stats
+                  port: 8404
+{% if haproxy.stats_user is defined and haproxy.stats_password is defined %}
+                httpHeaders:
+                - name: Authorization
+                  value: "Basic {{ (haproxy.stats_user + ':' + haproxy.stats_password) | b64encode }}"
+{% endif %}
+                initialDelaySeconds: 10
+                periodSeconds: 5
+                timeoutSeconds: 3
+                failureThreshold: 3
+              resources:
+                requests:
+                  cpu: "{{ kubernetes_config.resources.requests.cpu }}"
+                  memory: "{{ kubernetes_config.resources.requests.memory }}"
+                limits:
+                  cpu: "{{ kubernetes_config.resources.limits.cpu }}"
+                  memory: "{{ kubernetes_config.resources.limits.memory }}"
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 1000
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                  - ALL
+                  add:
+                  - NET_BIND_SERVICE
+            volumes:
+            - name: haproxy-config
+              configMap:
+                name: haproxy-config
+{% if ssl_config.enabled %}
+            - name: haproxy-ssl
+              secret:
+                secretName: haproxy-ssl
+{% endif %}
+            securityContext:
+              fsGroup: 1000
+
+- name: Create HAProxy Service
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: haproxy-blue-green
+        namespace: "{{ kubernetes_config.namespace }}"
+        labels:
+          app: haproxy-blue-green
+      spec:
+        type: "{{ kubernetes_config.service_type }}"
+        ports:
+        - port: {{ haproxy.http_port }}
+          targetPort: 80
+          protocol: TCP
+          name: http
+        - port: {{ haproxy.https_port }}
+          targetPort: 443
+          protocol: TCP
+          name: https
+        - port: {{ haproxy.stats_port }}
+          targetPort: 8404
+          protocol: TCP
+          name: stats
+        selector:
+          app: haproxy-blue-green
+
+- name: Wait for HAProxy deployment to be ready
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: haproxy-blue-green
+    namespace: "{{ kubernetes_config.namespace }}"
+    wait: true
+    condition:
+      type: Available
+      status: "True"
+    wait_sleep: 10
+    wait_timeout: 600 

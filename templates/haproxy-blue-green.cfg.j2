@@ -1,0 +1,94 @@
+global
+    daemon
+    user haproxy
+    group haproxy
+    log stdout local0
+    chroot /var/lib/haproxy
+    stats socket /run/haproxy/admin.sock mode 660 level admin
+    stats timeout 30s
+    maxconn 4096
+    
+    # SSL/TLS configuration
+{% if ssl_config.enabled %}
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384
+    ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+{% endif %}
+
+defaults
+    mode http
+    log global
+    option httplog
+    option dontlognull
+    option log-health-checks
+    option forwardfor
+    option http-server-close
+    timeout connect 5000
+    timeout client  50000
+    timeout server  50000
+    errorfile 400 /etc/haproxy/errors/400.http
+    errorfile 403 /etc/haproxy/errors/403.http
+    errorfile 408 /etc/haproxy/errors/408.http
+    errorfile 500 /etc/haproxy/errors/500.http
+    errorfile 502 /etc/haproxy/errors/502.http
+    errorfile 503 /etc/haproxy/errors/503.http
+    errorfile 504 /etc/haproxy/errors/504.http
+
+# Stats frontend
+frontend stats
+    bind *:{{ haproxy.stats_port }}
+    stats enable
+    stats uri /stats
+    stats refresh 30s
+{% if haproxy.stats_user is defined and haproxy.stats_password is defined %}
+    stats auth {{ haproxy.stats_user }}:{{ haproxy.stats_password }}
+{% endif %}
+
+# HTTP frontend
+frontend http_frontend
+    bind *:{{ haproxy.http_port }}
+    
+{% if ssl_config.redirect_http_to_https %}
+    # Redirect HTTP to HTTPS
+    redirect scheme https code 301
+{% else %}
+    # Blue-Green routing logic for HTTP
+    use_backend %[req.hdr(host),map_dom(/usr/local/etc/haproxy/domain_map.txt,{{ blue_green_routing.default_environment }})]
+{% endif %}
+
+{% if ssl_config.enabled %}
+# HTTPS frontend
+frontend https_frontend
+    bind *:{{ haproxy.https_port }} ssl crt {{ ssl_config.cert_path }}
+    
+    # Add security headers
+    http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    http-response set-header X-Frame-Options "SAMEORIGIN"
+    http-response set-header X-Content-Type-Options "nosniff"
+    
+    # Blue-Green routing logic for HTTPS
+    use_backend %[req.hdr(host),map_dom(/usr/local/etc/haproxy/domain_map.txt,{{ blue_green_routing.default_environment }})]
+{% endif %}
+
+{% for mapping in blue_green_routing.cluster_mappings %}
+{% set blue_backend = mapping.blue_subdomain %}
+{% set green_backend = mapping.green_subdomain %}
+
+# Backend for {{ blue_backend }}
+backend {{ blue_backend }}
+    balance roundrobin
+    option httpchk GET /health
+    http-request set-header Host {{ blue_backend }}.%[req.hdr(host),regsub(^[^.]+\.,)]
+{% for server in blue_green_routing.backends[blue_backend].servers %}
+    server {{ server.name }} {{ server.address }} {{ server.check }}
+{% endfor %}
+
+# Backend for {{ green_backend }}
+backend {{ green_backend }}
+    balance roundrobin
+    option httpchk GET /health
+    http-request set-header Host {{ green_backend }}.%[req.hdr(host),regsub(^[^.]+\.,)]
+{% for server in blue_green_routing.backends[green_backend].servers %}
+    server {{ server.name }} {{ server.address }} {{ server.check }}
+{% endfor %}
+
+{% endfor %} 
