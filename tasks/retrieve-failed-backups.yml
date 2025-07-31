@@ -33,3 +33,35 @@
   ignore_errors: true
   register: all_failed_backups_processed
 
+- name: '{{ ansible_name_module }} | process raw manifests for failed oadp backups'
+  when:
+    - failed_oadp_backup_list is defined
+    - failed_oadp_backup_list | length > 0 
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process schedule for if none was provided'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Failed", "PartiallyFailed"])) | .spec.includedNamespaces' | jq .[] | jq -s 
+      register: failed_oadp_backup_ns_out
+    
+    - name: '{{ ansible_name_module }} | set_fact | set namespacelist in array format'
+      ansible.builtin.set_fact:
+        failed_oadp_backup_ns_list: '{{ failed_oadp_backup_ns_out.stdout | from_json }}'
+      when:
+        - failed_oadp_backup_ns_out is defined
+        - failed_oadp_backup_ns_out.rc is defined
+        - failed_oadp_backup_ns_out.rc == 0 
+        - failed_oadp_backup_ns_out.stdout is defined
+        - failed_oadp_backup_ns_out.stdout != '' 
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all failed backup namespace list output '
+      ansible.builtin.debug:
+        var: failed_oadp_backup_ns_list 
+        verbosity: 2
+    
+     ###  Process raw manifests backup per failed backup namespace'
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+      ansible.builtin.include_tasks: tasks/download-raw-manifests-from-source-cluster.yaml
+      vars:
+        raw_manifests_namespace_list: "{{ failed_oadp_backup_ns_list }}"
+        backup_name: "{{ default_backup_name }}"
+

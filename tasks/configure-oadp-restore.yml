@@ -265,3 +265,9 @@
     - name: '{{ ansible_name_module }} | set_fact | unset backups_to_restore '
       ansible.builtin.set_fact:
         backups_to_restore: [] 
+
+        ### Download raw manifest from S3 bucket '
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional raw manifest download tasks'
+      ansible.builtin.include_tasks: tasks/download-raw-manifests-from-s3-bucket.yml
+      vars:
+        backup_name: "{{ default_backup_name }}"

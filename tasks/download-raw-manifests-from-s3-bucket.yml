@@ -1,0 +1,85 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | pvc_backup_staging_dir '
+  ansible.builtin.set_fact:
+    raw_manifests_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}"
+  when:
+    - not raw_manifests_backup_staging_dir is defined or not raw_manifests_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_dir'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_dir: 'raw-manifests'
+  when:
+    - not raw_manifests_bucket_dir is defined or  raw_manifests_bucket_dir == ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_name'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_name: '{{ oadp_s3_bucket }}'
+  when:
+    - not raw_manifests_bucket_name is defined or  raw_manifests_bucket_name == ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_s3url'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_s3url: '{{ oadp_s3url }}'
+  when:
+    - not raw_manifests_bucket_s3url is defined or raw_manifests_bucket_s3url == ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_key'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_key: '{{ oadp_bucket_access_key }}'
+  when:
+    - not raw_manifests_bucket_key is defined or raw_manifests_bucket_key == ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_secret'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_secret: '{{ oadp_bucket_access_secret }}'
+  when:
+    - not raw_manifests_bucket_secret is defined or  raw_manifests_bucket_secret == ''
+
+- name: '{{ ansible_name_module }} | set_fact | raw_manifests_bucket_region'
+  ansible.builtin.set_fact:
+    raw_manifests_bucket_region: "{{ oadp_bucket_region | default('us-east-1', true) }}"
+  when:
+    - not raw_manifests_bucket_region is defined or raw_manifests_bucket_region == ''
+
+- name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+  ansible.builtin.shell: >
+    which aws
+  ignore_errors: yes
+  register: aws_binary
+
+- name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+  ansible.builtin.assert:
+    that:
+      - aws_binary is defined
+      - aws_binary.rc is defined
+      - aws_binary.rc == 0
+      - aws_binary.stdout is defined
+      - aws_binary.stdout != ''
+    msg: "The AWS CLI binary is required to download the Raw manifests from the S3 bucket "
+
+- name: '{{ ansible_name_module }} | set_fact | aws_cli '
+  ansible.builtin.set_fact:
+    aws_cli: '{{ aws_binary.stdout }}'
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print raw_manifests_bucket_key output '
+  ansible.builtin.debug:
+    var: raw_manifests_bucket_key
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print raw_manifests_bucket_secret output '
+  ansible.builtin.debug:
+    var: raw_manifests_bucket_secret
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | command:shell | copy Raw manifests directory from S3 bucket'
+  ansible.builtin.shell: >
+    {{ aws_cli }} s3 sync --region {{ raw_manifests_bucket_region }} \
+      s3://{{ raw_manifests_bucket_name }}/{{ raw_manifests_bucket_dir }}/ \
+       {{ raw_manifests_backup_staging_dir }}/ \
+     --endpoint-url https://{{ raw_manifests_bucket_s3url }} --no-verify-ssl
+  ignore_errors: true
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ raw_manifests_bucket_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ raw_manifests_bucket_secret }}"
+  register: manifests_downloaded
+

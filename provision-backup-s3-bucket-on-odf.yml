@@ -51,18 +51,46 @@
             msg: "The S3 bucket name is required to create the bucket"
 
   tasks:
-    - name: '{{ ansible_name_module }} | set_fact | obc_bucket_class '
-      ansible.builtin.set_fact:
-        obc_bucket_class: 'noobaa-default-bucket-class'
+    - name: '{{ ansible_name_module }} | Provision RGW bucket without BackingStore '
       when:
-        - not obc_bucket_class is defined or obc_bucket_class == ''
+        - provision_rgw_obc is defined
+        - provision_rgw_obc | bool
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Import RGW OBC create tasks'
+          ansible.builtin.include_tasks: tasks/create-rgw-obc-on-odf-cluster.yml
+          vars:
+            rgw_bucket_namespace: "{{ backup_bucket_namespace }}"
+            rgw_bucket_name: "{{ backup_bucket_name }}"
 
-    - name: '{{ ansible_name_module }} | set_fact | obc_storage_class'
-      ansible.builtin.set_fact:
-        obc_storage_class: 'openshift-storage.noobaa.io'
+    - name: '{{ ansible_name_module }} | Provision noobaa or RGW bucket with BackingStore '
       when:
-        - not obc_storage_class is defined or obc_storage_class == ''
+        - not provision_rgw_obc is defined or not provision_rgw_obc | bool
+      block:
+        - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
+          ansible.builtin.include_tasks: tasks/create-obc-on-odf-cluster.yml 
+          when:
+            - obc_bucket_class is defined
+            - obc_bucket_class != ''
+            - "'noobaa' in obc_bucket_class"
+            - obc_storage_class is defined
+            - obc_storage_class != '' 
+            - "'noobaa' in obc_storage_class"
 
-    - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
-      ansible.builtin.import_tasks: tasks/create-obc-on-odf-cluster.yml 
+        - name: '{{ ansible_name_module }} | set_fact | obc_bucket_class'
+          ansible.builtin.set_fact:
+            obc_bucket_class: 'rgw-bucket-class'
+          when:
+            - not obc_bucket_class is defined or obc_bucket_class == ''
 
+        - name: '{{ ansible_name_module }} | set_fact | obc_storage_class'
+          ansible.builtin.set_fact:
+            obc_storage_class: 'ocs-storagecluster-ceph-rgw'
+          when:
+            - not obc_storage_class is defined or obc_storage_class == ''
+
+        - name: '{{ ansible_name_module }} | import_tasks | Import OBC create tasks'
+          ansible.builtin.include_tasks: tasks/create-rgw-obc-on-odf-cluster.yml 
+          when:
+            - "not 'noobaa' in obc_bucket_class"
+            - "not 'noobaa' in obc_storage_class"
+            

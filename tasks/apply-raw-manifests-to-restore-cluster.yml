@@ -13,40 +13,31 @@
   loop:
     - "{{ manifest_backup_staging_dir }}"
 
-- name: '{{ ansible_name_module }} | download raw manifests to S3 bucket '
+- name: '{{ ansible_name_module }} | download raw manifests from S3 bucket '
+  ansible.builtin.include_tasks: tasks/download-raw-manifests-from-s3-bucket.yml
+  vars:
+    raw_manifests_backup_staging_dir: "{{ manifest_backup_staging_dir }}"
   when:
     - download_manifests_from_s3 is defined
     - download_manifests_from_s3 | bool 
-  block:
-    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
-      ansible.builtin.shell: >
-        which aws
-      ignore_errors: yes
-      register: aws_binary
 
-    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
-      ansible.builtin.assert:
-        that:
-          - aws_binary is defined
-          - aws_binary.rc is defined
-          - aws_binary.rc == 0
-          - aws_binary.stdout is defined
-          - aws_binary.stdout != ''
-        msg: "The AWS CLI binary is required to download the raw manifest to the S3 bucket "
+- name: '{{ ansible_name_module }} | stat | Check if Raw Manifests dir exist'
+  ansible.builtin.stat:
+    path: "{{ manifest_backup_staging_dir }}"
+    get_checksum: false
+  when:
+    - manifest_backup_staging_dir is defined
+    - manifest_backup_staging_dir != ""
+  register: manifest_backup_staging_dir_exists
 
-    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
-      ansible.builtin.set_fact:
-        aws_cli: '{{ aws_binary.stdout }}'
-
-    - name: '{{ ansible_name_module }} | command:shell | copy raw manifest directory from S3 bucket'
-      ansible.builtin.shell: >
-        {{ aws_cli }} s3 --region {{ oadp_bucket_region }} sync s3://{{ oadp_s3_bucket }}/raw-manifests/ \
-         {{ manifest_backup_staging_dir }}/ \
-         --endpoint-url https://{{ oadp_s3url }} --no-verify-ssl
-      environment:
-        AWS_ACCESS_KEY_ID: "{{ oadp_bucket_access_key }}"
-        AWS_SECRET_ACCESS_KEY: "{{ oadp_bucket_access_secret }}"
-      register: manifests_downloaded
+- name: '{{ ansible_name_module }} | assert | the Raw manifests  exist'
+  ansible.builtin.assert:
+    that:
+      - manifest_backup_staging_dir_exists is defined
+      - manifest_backup_staging_dir_exists.stat is defined
+      - manifest_backup_staging_dir_exists.stat.exists is defined
+      - manifest_backup_staging_dir_exists.stat.exists | bool
+    msg: "The list of raw manifests need to exist to process them"
 
 - name: '{{ ansible_name_module }} | Apply raw manifests '
   when:

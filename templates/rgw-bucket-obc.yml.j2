@@ -1,0 +1,11 @@
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: {{ rgw_bucket_name }}
+  namespace: {{ rgw_bucket_namespace }}
+  finalizers:
+  - objectbucket.io/finalizer
+spec:
+  bucketName: {{ rgw_bucket_name }}
+  objectBucketName: {{ rgw_bucket_name }}
+  storageClassName: {{ obc_storage_class | default('ocs-storagecluster-ceph-rgw', true) }}

@@ -1,0 +1,90 @@
+---
+- name: '{{ ansible_name_module }} | Deploy Operators | Create Backup Bucket Namespace'
+  ansible.builtin.command: >
+    {{ openshift_cli }} new-project '{{  rgw_bucket_namespace }}' \
+      --display-name='{{ rgw_bucket_namespace }}' \
+      --description='{{ rgw_bucket_namespace }}'
+  failed_when: "obc_bucket_ns_created.rc >=1 and not ' already exists' in obc_bucket_ns_created.stderr"
+  register: obc_bucket_ns_created
+
+- name: '{{ ansible_name_module }} | template | Render bucket OBC manifests '
+  ansible.builtin.template:
+    src: "templates/rgw-bucket-obc.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ rgw_bucket_name }}-rgw-bucket-obc.yml"
+    force: yes
+  register: bucket_obc_config_copied
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create bucket OBC'
+  ansible.builtin.command: >
+    {{ openshift_cli }} apply -f {{ bucket_obc_config_copied.dest }}
+  when:
+    - bucket_obc_config_copied is defined
+    - bucket_obc_config_copied.dest is defined
+    - bucket_obc_config_copied.state is defined
+    - "'file' in  bucket_obc_config_copied.state"
+  register: bucket_obc_config_applied
+
+- name: '{{ ansible_name_module }} | wait_for | wait for CR to be ready'
+  ansible.builtin.wait_for:
+    timeout: 90
+  delegate_to: localhost
+
+- name: '{{ ansible_name_module }} | validate required variables '
+  when:
+    - bucket_obc_config_applied is defined
+    - bucket_obc_config_applied.rc is defined
+    - bucket_obc_config_applied.rc == 0
+  block:
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | bucket OBC exist'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get obc {{ rgw_bucket_name }} -n {{ rgw_bucket_namespace }} --no-headers | awk '{print $1}'
+      register: bucket_obc_created
+
+    - name: '{{ ansible_name_module }} | assert | the S3 bucket successfully created'
+      ansible.builtin.assert:
+        that:
+          - bucket_obc_created is defined
+          - bucket_obc_created.stdout is defined
+          - bucket_obc_created.stdout != ''
+        msg: "The S3 bucket OBC was not successfully created "
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | bucket secret exist'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get secret {{ rgw_bucket_name }} -n {{ rgw_bucket_namespace }} --no-headers | awk '{print $1}'
+      register: bucket_secret_created
+
+    - name: '{{ ansible_name_module }} | assert | the S3 bucket secret successfully created'
+      ansible.builtin.assert:
+        that:
+          - bucket_secret_created is defined
+          - bucket_secret_created.stdout is defined
+          - bucket_secret_created.stdout != ''
+        msg: "The S3 bucket OBC was not successfully created "
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} get | bucket cm exist'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get cm {{ rgw_bucket_name }} -n {{ rgw_bucket_namespace }} --no-headers | awk '{print $1}'
+      register: bucket_cm_created
+
+    - name: '{{ ansible_name_module }} | assert | the S3 bucket CM successfully created'
+      ansible.builtin.assert:
+        that:
+          - bucket_cm_created is defined
+          - bucket_cm_created.stdout is defined
+          - bucket_cm_created.stdout != ''
+        msg: "The S3 bucket CM was not successfully created "
+
+    - name: '{{ ansible_name_module }} | template | create directory to store manifests'
+      ansible.builtin.file:
+        path: "{{ staging_dir | d('/tmp', true) }}/{{ rgw_bucket_name }}"
+        state: directory
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} extract | CM '
+      ansible.builtin.command: >
+        {{ openshift_cli }} extract cm/{{ rgw_bucket_name }} -n {{ rgw_bucket_namespace }} --to {{ staging_dir | d('/tmp', true) }}/{{ rgw_bucket_name }}
+      register: obc_cm_exracted
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} extract | Secret '
+      ansible.builtin.command: >
+        {{ openshift_cli }} extract secret/{{ rgw_bucket_name }} -n {{ rgw_bucket_namespace }} --to {{ staging_dir | d('/tmp', true) }}/{{ rgw_bucket_name }}
+      register: obc_secret_exracted
