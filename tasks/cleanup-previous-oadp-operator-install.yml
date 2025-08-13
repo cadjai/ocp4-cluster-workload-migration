@@ -50,6 +50,24 @@
     - oadp_csv_exists.stdout != ''
   register: oadp_csv_deleted
 
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get OADP Secret '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get secret -n  {{ existing_oadp_backup_ns }} --no-headers | egrep -i "cloud-credentials}velero" | awk '{print $1}'
+  ignore_errors: true
+  register: oadp_secrets_exists
+
+- name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete OADP secret if it exist in namespace'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} delete secret {{ item }} -n {{ existing_oadp_backup_ns }}
+  ignore_errors: true
+  loop: "{{ oadp_secrets_exists.stdout_lines }}"
+  when:
+    - oadp_secrets_exists.rc is defined
+    - oadp_secrets_exists.rc == 0
+    - oadp_secrets_exists.stdout_lines is defined
+    - oadp_secrets_exists.stdout_lines | length > 0 
+  register: oadp_secret_deleted
+
 - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} get | get all oadp workload objects'
   ansible.builtin.shell: >
     {{ openshift_cli }} get all -n  {{ existing_oadp_backup_ns }} --no-headers | awk '{print $1}'
