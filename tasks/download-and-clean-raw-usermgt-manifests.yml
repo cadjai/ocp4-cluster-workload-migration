@@ -1,0 +1,53 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get roles,rolebindings,serviceaccounts,users,groups -n {{ item }}  -o yaml --show-managed-fields=false >  {{roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ item }}-usermgt.yaml
+  loop: "{{ raw_manifests_namespace_list }}"
+  ignore_errors: true
+  register: usermgt_manifests_downloaded
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ usermgt_manifest_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ usermgt_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ usermgt_manifest_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ usermgt_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ usermgt_manifest_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ usermgt_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    usermgt_manifest_file_path: "{{ roles_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-usermgt.yaml"
+

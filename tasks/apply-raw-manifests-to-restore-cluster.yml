@@ -12,6 +12,8 @@
     mode: 0777
   loop:
     - "{{ manifest_backup_staging_dir }}"
+  when:
+    - not manifest_backup_staging_dir is defined or not manifest_backup_staging_dir != ''
 
 - name: '{{ ansible_name_module }} | download raw manifests from S3 bucket '
   ansible.builtin.include_tasks: tasks/download-raw-manifests-from-s3-bucket.yml
@@ -44,6 +46,29 @@
     - auto_apply_raw_manifests is defined
     - auto_apply_raw_manifests | bool 
   block:
+    - name: '{{ ansible_name_module }} | find | Find all namespaces files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/ns"
+        recurse: yes
+        patterns: '*-manifest.yaml'
+      register: ns_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | namespace file paths'
+      ansible.builtin.set_fact:
+        ns_manifest_file_paths: "{{ ns_manifests.files | map(attribute='path') | list }}"
+      when:
+        - ns_manifests is defined
+        - ns_manifests.files is defined
+        - ns_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all namespace manifest paths output '
+      ansible.builtin.debug:
+        var: ns_manifest_file_paths
+        verbosity: 2
+      when:
+        - ns_manifest_file_paths is defined
+        - ns_manifest_file_paths | length > 0 
+
     - name: '{{ ansible_name_module }} | find | Find all workload files'
       ansible.builtin.find:
         path: "{{ manifest_backup_staging_dir }}"
@@ -136,6 +161,62 @@
         - pvc_manifest_file_paths is defined
         - pvc_manifest_file_paths | length > 0 
 
+    - name: '{{ ansible_name_module }} | find | Find all quotas files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/quotas"
+        recurse: yes
+        patterns: '*-quota.yaml'
+      register: clusterquota_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | quotas file paths'
+      ansible.builtin.set_fact:
+        clusterquota_manifest_file_paths: "{{ clusterquota_manifests.files | map(attribute='path') | list }}"
+      when:
+        - clusterquota_manifests is defined
+        - clusterquota_manifests.files is defined
+        - clusterquota_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all quotas manifest paths output '
+      ansible.builtin.debug:
+        var: clusterquota_manifest_file_paths
+        verbosity: 2
+      when:
+        - clusterquota_manifest_file_paths is defined
+        - clusterquota_manifest_file_paths | length > 0
+
+    - name: '{{ ansible_name_module }} | find | Find all ns quotas files'
+      ansible.builtin.find:
+        path: "{{ manifest_backup_staging_dir }}/quotas/nsquotas"
+        recurse: yes
+        patterns: '*-quota.yaml'
+      register: quota_manifests
+
+    - name: '{{ ansible_name_module }} | set_fact | all ns quotas file paths'
+      ansible.builtin.set_fact:
+        quota_manifest_file_paths: "{{ quota_manifests.files | map(attribute='path') | list }}"
+      when:
+        - quota_manifests is defined
+        - quota_manifests.files is defined
+        - quota_manifests.files | length > 0
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all ns quotas manifest paths output '
+      ansible.builtin.debug:
+        var: quota_manifest_file_paths
+        verbosity: 2
+      when:
+        - quota_manifest_file_paths is defined
+        - quota_manifest_file_paths | length > 0
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply | namespace manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ ns_manifest_file_paths }}"
+      when:
+        - ns_manifest_file_paths is defined
+        - ns_manifest_file_paths | length > 0 
+        - (apply_rb_manifests is defined and apply_rb_manifests | bool) or (apply_pvc_manifests is defined and apply_pvc_manifests | bool) or (apply_wkl_manifests is defined and apply_wkl_manifests | bool)
+      register: ns_manifests_applied
+
     - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | rb manifests'
       ansible.builtin.shell: >
         {{ openshift_cli }} apply -f {{ item }} 
@@ -179,3 +260,26 @@
         - wkl_manifest_file_paths is defined
         - wkl_manifest_file_paths | length > 0 
       register: pvc_manifests_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | cluster quota manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ clusterquota_manifest_file_paths }}"
+      when:
+        - apply_quota_manifests is defined
+        - apply_quota_manifests | bool 
+        - clusterquota_manifest_file_paths is defined
+        - clusterquota_manifest_file_paths | length > 0 
+      register: clusterquota_manifests_applied
+
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} apply  | quota manifests'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} apply -f {{ item }} 
+      loop: "{{ quota_manifest_file_paths }}"
+      when:
+        - apply_quota_manifests is defined
+        - apply_quota_manifests | bool 
+        - quota_manifest_file_paths is defined
+        - quota_manifest_file_paths | length > 0 
+      register: quota_manifests_applied
+

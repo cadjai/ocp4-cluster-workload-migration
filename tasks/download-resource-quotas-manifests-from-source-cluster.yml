@@ -1,0 +1,193 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | clusterquotas_backup_staging_dir '
+  ansible.builtin.set_fact:
+    clusterquotas_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/quotas" 
+  when:
+    - not clusterquotas_backup_staging_dir is defined or not clusterquotas_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | set_fact | quotas_backup_staging_dir '
+  ansible.builtin.set_fact:
+    quotas_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/quotas/nsquotas" 
+  when:
+    - not quotas_backup_staging_dir is defined or not quotas_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the manifests download staging dir exist '
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0777
+  loop: 
+    - "{{ clusterquotas_backup_staging_dir }}"
+    - "{{ quotas_backup_staging_dir }}"
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all released pvs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get ClusterResourceQuota -o json | jq -r '.items[] | .metadata.name' 
+  register: cluster_quotas
+
+- name: '{{ ansible_name_module }} | set_fact | set cluster_quotas_list in array format'
+  ansible.builtin.set_fact:
+    cluster_quotas_list: '{{ cluster_quotas.stdout_lines  | list }}'
+  when:
+    - cluster_quotas is defined
+    - cluster_quotas.stdout_lines is defined
+    - cluster_quotas.stdout_lines | length > 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print cluster_quotas_list output '
+  ansible.builtin.debug:
+    msg: "The list of cluster quotas is : {{ cluster_quotas_list }}"
+    verbosity: 2
+  when:
+    - cluster_quotas_list is defined
+    - cluster_quotas_list | length > 0
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get ResourceQuota  -A  -o json | jq -r '.items[] | {"name": .metadata.name, "namespace": .metadata.namespace}' | jq -s 
+  register: existing_quotas
+
+- name: '{{ ansible_name_module }} | set_fact | set existing_quotas_list in array format'
+  ansible.builtin.set_fact:
+    existing_quotas_list: '{{ existing_quotas.stdout | from_json }}'
+  when:
+    - existing_quotas is defined
+    - existing_quotas.rc is defined
+    - existing_quotas.rc == 0 
+    - existing_quotas.stdout is defined
+    - existing_quotas.stdout  != '' 
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all bound pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get ResourceQuota {{ item.name }} -n {{ item.namespace }} -o yaml --show-managed-fields=false >  {{ quotas_backup_staging_dir }}/{{ backup_name }}-{{ item.namespace }}-quota.yaml
+  loop: "{{ existing_quotas_list }}"
+  when:
+    - item is defined
+    - item.name is defined
+    - item.namespace is defined
+    - item.namespace in raw_manifests_namespace_list 
+  ignore_errors: true
+  register: quotas_downloaded 
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all released pvs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get ClusterResourceQuota {{ item }}  -o yaml --show-managed-fields=false >  {{ clusterquotas_backup_staging_dir }}/{{ backup_name }}-{{ item }}.yaml
+  loop: "{{ cluster_quotas_list }}"
+  ignore_errors: true
+  register: cluster_quotas_downloaded
+
+- name:  '{{ ansible_name_module }} | Remove status metadata from exported file '
+  ansible.builtin.shell: >
+    sed -i '/^status:$/Q' {{ cluster_quota_file_path }}
+  loop: "{{ cluster_quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    cluster_quota_file_path: "{{ clusterquotas_backup_staging_dir }}/{{ backup_name }}-{{ cluster_quotas_list[key_cnt] }}.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ cluster_quota_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ cluster_quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    cluster_quota_file_path: "{{ clusterquotas_backup_staging_dir }}/{{ backup_name }}-{{ cluster_quotas_list[key_cnt] }}.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ cluster_quota_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ cluster_quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    cluster_quota_file_path: "{{ clusterquotas_backup_staging_dir }}/{{ backup_name }}-{{ cluster_quotas_list[key_cnt] }}.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ cluster_quota_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ cluster_quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    cluster_quota_file_path: "{{ clusterquotas_backup_staging_dir }}/{{ backup_name }}-{{ cluster_quotas_list[key_cnt] }}.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove status metadata from exported file '
+  ansible.builtin.shell: >
+    sed -i '/^status:$/Q' {{ quota_file_path }}
+  loop: "{{ quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    quota_file_path: "{{ quotas_backup_staging_dir }}/{{ backup_name }}-{{ existing_quotas_list[key_cnt].namespace }}-quota.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ quota_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    quota_file_path: "{{ quotas_backup_staging_dir }}/{{ backup_name }}-{{ existing_quotas_list[key_cnt].namespace }}-quota.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ quota_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    quota_file_path: "{{ quotas_backup_staging_dir }}/{{ backup_name }}-{{ existing_quotas_list[key_cnt].namespace }}-quota.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ quota_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ quotas_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    quota_file_path: "{{ quotas_backup_staging_dir }}/{{ backup_name }}-{{ existing_quotas_list[key_cnt].namespace }}-quota.yaml"
+

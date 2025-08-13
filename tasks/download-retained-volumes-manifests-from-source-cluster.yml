@@ -1,0 +1,228 @@
+---
+- name: '{{ ansible_name_module }} | set_fact | pvs_backup_staging_dir '
+  ansible.builtin.set_fact:
+    pvs_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/pvs" 
+  when:
+    - not pvs_backup_staging_dir is defined or not pvs_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | set_fact | pvcs_backup_staging_dir '
+  ansible.builtin.set_fact:
+    pvcs_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/pvs/pvcs" 
+  when:
+    - not pvcs_backup_staging_dir is defined or not pvcs_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the manifests download staging dir exist '
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: 0777
+  loop: 
+    - "{{ pvs_backup_staging_dir }}"
+    - "{{ pvcs_backup_staging_dir }}"
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all released pvs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pv -o json | jq -r '.items[] | select([.status.phase] | inside(["Released"])) | .metadata.name' 
+  register: released_pvs
+
+- name: '{{ ansible_name_module }} | set_fact | set released_pvs_list in array format'
+  ansible.builtin.set_fact:
+    released_pvs_list: '{{ released_pvs.stdout_lines  | list }}'
+  when:
+    - released_pvs is defined
+    - released_pvs.stdout_lines is defined
+    - released_pvs.stdout_lines | length > 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print released pv released_pvs_list output '
+  ansible.builtin.debug:
+    msg: "The list of released pvs is : {{ released_pvs_list }}"
+    verbosity: 2
+  when:
+    - released_pvs_list is defined
+    - released_pvs_list | length > 0
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all released pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pv -o json | jq -r '.items[] | select([.status.phase] | inside(["Released"])) | {"name": .metadata.name, "pvcname": .spec.claimRef.name, "pvcnamespace": .spec.claimRef.namespace}' | jq -s 
+  register: released_pvcs
+
+- name: '{{ ansible_name_module }} | set_fact | set released_pvcs_list in array format'
+  ansible.builtin.set_fact:
+    released_pvcs_list: '{{ released_pvcs.stdout  | from_json | list }}'
+  when:
+    - released_pvcs is defined
+    - released_pvcs.stdout_lines is defined
+    - released_pvcs.stdout_lines | length > 0
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print released pvc released_pvcs_list output '
+  ansible.builtin.debug:
+    msg: "The list of namespaces with  released pvcs is : {{ released_pvcs_list }}"
+    verbosity: 2
+  when:
+    - released_pvcs_list is defined
+    - released_pvcs_list | length > 0
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all released pvs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pv {{ item }}  -o yaml --show-managed-fields=false >  {{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ item }}-pv.yaml
+  loop: "{{ released_pvs_list }}"
+  ignore_errors: true
+  register: released_pvs_downloaded
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all released pvcs in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get pvc {{ item.pvcname }} -n {{ item.pvcnamespace }}  -o yaml --show-managed-fields=false >  {{ pvcs_backup_staging_dir }}/{{ backup_name }}-{{ item.pvcname }}-pvc.yaml
+  loop: "{{ released_pvcs_list }}"
+  ignore_errors: true
+  register: released_pvcs_downloaded
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 4 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "lastScheduleTime: "
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 5 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "lastSuccessfulTime: "
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 6 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "status:"
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 7 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pv_file_path }}"
+    regexp: "generation: "
+    state: absent
+  loop: "{{ released_pvs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pv_file_path: "{{ pvs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvs_list[key_cnt] }}-pv.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pvc_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ released_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pvc_file_path: "{{ pvcs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvcs_list[key_cnt] }}-pvc.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pvc_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ released_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pvc_file_path: "{{ pvcs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvcs_list[key_cnt] }}-pvc.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 3'
+  ansible.builtin.lineinfile:
+    path: "{{ released_pvc_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ released_pvcs_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0 
+  vars:
+    released_pvc_file_path: "{{ pvcs_backup_staging_dir }}/{{ backup_name }}-{{ released_pvcs_list[key_cnt] }}-pvc.yaml"
+

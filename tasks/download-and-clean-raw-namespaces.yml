@@ -1,0 +1,113 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | download all manifestss in cluster '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get namespace {{ item }}  -o yaml --show-managed-fields=false >  {{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ item }}-manifest.yaml
+  loop: "{{ raw_manifests_namespace_list }}"
+  ignore_errors: true
+  register: ns_manifests_downloaded
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 1 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: "creationTimestamp:"
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 2 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: "resourceVersion: "
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 3 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: "uid: "
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 4 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: "  phase:"
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 5 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: "status:"
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 6 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: " openshift.io/sa.scc.supplemental-groups:"
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
+- name:  '{{ ansible_name_module }} | Remove unecessary metadata from exported file 7 of 7'
+  ansible.builtin.lineinfile:
+    path: "{{ ns_manifest_file_path }}"
+    regexp: " openshift.io/sa.scc.uid-range:"
+    state: absent
+  loop: "{{ ns_manifests_downloaded.results }}"
+  loop_control:
+    index_var: key_cnt
+  when:
+    - item is defined
+    - item.rc is defined
+    - item.rc == 0
+  vars:
+    ns_manifest_file_path: "{{ ns_manifest_backup_staging_dir }}/{{ backup_name }}-{{ raw_manifests_namespace_list[key_cnt] }}-manifest.yaml"
+
