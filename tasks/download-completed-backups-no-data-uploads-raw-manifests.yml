@@ -1,0 +1,99 @@
+---
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | .metadata.name'
+  register: completed_oadp_backup_out
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    msg: "{{ completed_oadp_backup_out.stdout_lines | list }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | set completed_oadp_backup_list in array format'
+  ansible.builtin.set_fact:
+    completed_oadp_backup_list: '{{ completed_oadp_backup_out.stdout_lines | list }}'
+  when:
+    - completed_oadp_backup_out is defined
+    - completed_oadp_backup_out.rc is defined
+    - completed_oadp_backup_out.rc == 0
+    - completed_oadp_backup_out.stdout is defined
+    - completed_oadp_backup_out.stdout != '' 
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
+  ansible.builtin.debug:
+    var: completed_oadp_backup_list 
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup with dataupload to process'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"]))  | select(.metadata.ownerReferences[0].name | contains("{{ default_backup_name }}")) | {"name": .metadata.name, "backup": .metadata.ownerReferences[0].name}' | jq -s '. | group_by(.backup) | map({backup: .[0].backup, ducount: length})' | jq -r '.[] | .backup'
+  register: backup_to_restore_raw_out
+
+- name: '{{ ansible_name_module }} | set_fact | set backup_to_restore_list in array format'
+  ansible.builtin.set_fact:
+    backup_to_restore_list: '{{ backup_to_restore_raw_out.stdout_lines | list }}'
+  when:
+    - backup_to_restore_raw_out is defined
+    - backup_to_restore_raw_out.stdout is defined
+    - backup_to_restore_raw_out.stdout != ''
+    - backup_to_restore_raw_out.stdout_lines is defined
+    - backup_to_restore_raw_out.stdout_lines | length > 0
+
+- name: '{{ ansible_name_module }} | set_fact | set non_restorable_backups list'
+  ansible.builtin.set_fact:
+    non_restorable_backups_list: '{{ completed_oadp_backup_list | symmetric_difference(backup_to_restore_list) }}'
+  when:
+    - completed_oadp_backup_list is defined
+    - completed_oadp_backup_list | length > 0 
+    - backup_to_restore_list is defined
+    - backup_to_restore_list | length > 0 
+
+- name: '{{ ansible_name_module }} | process raw manifests for completed nut non restorable oadp backups'
+  when:
+    - non_restorable_backups_list is defined
+    - non_restorable_backups_list | length > 0 
+  block:
+    - name: '{{ ansible_name_module }} | set_fact | set non_restorable_backups_ns_list in array format'
+      ansible.builtin.set_fact:
+        non_restorable_backups_ns_list: "{{ non_restorable_backups_ns_list | default([], true) + [nsname] }}"
+      loop: "{{ non_restorable_backups_list }}"
+      vars:
+        nsname: "{{ item.split(default_backup_name + '-')[1] }}"
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all non restorable backup namespace list '
+      ansible.builtin.debug:
+        var: non_restorable_backups_ns_list 
+        verbosity: 2
+    
+    - name: '{{ ansible_name_module }} | set_fact | set sorted_non_restorable_backups_ns_list in array format'
+      ansible.builtin.set_fact:
+        sorted_non_restorable_backups_ns_list: "{{ non_restorable_backups_ns_list | sort }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all sorted non restorable backup namespace list '
+      ansible.builtin.debug:
+        var: sorted_non_restorable_backups_ns_list 
+        verbosity: 2
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of all sorted non restorable backup namespace list '
+      ansible.builtin.debug:
+        var: sorted_non_restorable_backups_ns_list | length 
+        verbosity: 2
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of completed all backup'
+      ansible.builtin.debug:
+        var: completed_oadp_backup_list | length
+        verbosity: 2
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of completed and valid  backup'
+      ansible.builtin.debug:
+        var: backup_to_restore_list | length
+        verbosity: 2
+
+     ###  Process raw manifests backup per completed but non restorable backup namespace'
+    - name: '{{ ansible_name_module }} | import_tasks | Import additional backup processing tasks'
+      ansible.builtin.include_tasks: tasks/download-raw-manifests-from-source-cluster.yaml
+      vars:
+        raw_manifests_namespace_list: "{{ sorted_non_restorable_backups_ns_list }}"
+        backup_name: "{{ default_backup_name }}"
+        manifest_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/completed-backup-manifests"
+

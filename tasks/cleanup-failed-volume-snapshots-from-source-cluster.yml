@@ -1,0 +1,94 @@
+---
+- name: '{{ ansible_name_module }} | Authenticate with the API'
+  ansible.builtin.command: >
+    {{ openshift_cli }} login \
+      --token {{ backup_src_cluster_token }} \
+      --insecure-skip-tls-verify=true {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+
+- name: '{{ ansible_name_module }} | Remove failed volume snapshot '
+  when:
+    - remove_failed_volsnap is defined
+    - remove_failed_volsnap | bool
+  block:
+    - name: '{{ ansible_name_module }} | Retrieve Failed volume snapshots'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get VolumeSnapshot.snapshot.storage.k8s.io --all-namespaces -o json | jq -r '.items[] | select(.status.readyToUse == false) | select(.status | has("error")) | select(.metadata.name | contains("{{ default_backup_name }}")) | {"name": .metadata.name, "namespace": .metadata.namespace, "snapshotcontent": .spec.source.volumeSnapshotContentName}' | jq -s 
+      register: failed_volsnap_list_retrieved 
+    
+    - name: '{{ ansible_name_module }} | set_fact | set failed_volsnap_list in array format'
+      ansible.builtin.set_fact:
+        failed_volsnap_list: '{{ failed_volsnap_list_retrieved.stdout | from_json }}'
+      when:
+        - failed_volsnap_list_retrieved is defined
+        - failed_volsnap_list_retrieved.rc is defined
+        - failed_volsnap_list_retrieved.rc == 0
+        - failed_volsnap_list_retrieved.stdout is defined
+        - failed_volsnap_list_retrieved.stdout != '' 
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of failed volume snapshot output '
+      ansible.builtin.debug:
+        msg: "The list of failed volume snapshot is : \n {{ failed_volsnap_list }}"
+        verbosity: 2
+      when:
+        - failed_volsnap_list is defined
+        - failed_volsnap_list | length > 0
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete volume snapshot'
+      ansible.builtin.shell: | 
+        {{ openshift_cli }} delete  VolumeSnapshot.snapshot.storage.k8s.io {{ item.name }} -n {{ item.namespace }} 
+        {{ openshift_cli }} patch VolumeSnapshot.snapshot.storage.k8s.io {{ item.name }} -n {{ item.namespace }} --type json --patch='[{"op": "remove", "path": "/metadata/finalizers"}]'
+      ignore_errors: true
+      loop: "{{ failed_volsnap_list }}"
+      when:
+        - failed_volsnap_list is defined
+        - failed_volsnap_list | length > 0
+      register: failed_volsnap_deleted
+    
+- name: '{{ ansible_name_module }} | Remove failed volume snapshot contents'
+  when:
+    - remove_failed_volsnap_content is defined
+    - remove_failed_volsnap_content | bool
+  block:
+    - name: '{{ ansible_name_module }} | Retrieve Failed volume snapshot contents'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get VolumeSnapshotContent.snapshot.storage.k8s.io -o json | jq -r '.items[] | select(.status.readyToUse == false) | select(.status | has("error")) | select(.metadata.name | contains("{{ default_backup_name }}")) | {"name": .metadata.name, "snapshot": .spec.volumeSnapshotRef.name, "snapshotns": .spec.volumeSnapshotRef.namespace}' | jq -s 
+      register: failed_volsnap_content_list_retrieved 
+    
+    - name: '{{ ansible_name_module }} | set_fact | set failed_volsnap_content_list in array format'
+      ansible.builtin.set_fact:
+        failed_volsnap_content_list: '{{ failed_volsnap_content_list_retrieved.stdout | from_json }}'
+      when:
+        - failed_volsnap_content_list_retrieved is defined
+        - failed_volsnap_content_list_retrieved.rc is defined
+        - failed_volsnap_content_list_retrieved.rc == 0
+        - failed_volsnap_content_list_retrieved.stdout is defined
+        - failed_volsnap_content_list_retrieved.stdout != ''
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of failed volume snapshot output '
+      ansible.builtin.debug:
+        msg: "The list of failed volume snapshot contents is : \n {{ failed_volsnap_content_list }}"
+        verbosity: 2
+      when:
+        - failed_volsnap_content_list is defined
+        - failed_volsnap_content_list | length > 0
+    
+    - name: '{{ ansible_name_module }} | ansible.builtin.shell:{{ openshift_cli }} delete | delete volume snapshot content'
+      ansible.builtin.shell: | 
+        {{ openshift_cli }} patch VolumeSnapshotContent.snapshot.storage.k8s.io {{ item.name }} --type json --patch='[{"op": "remove", "path": "/metadata/finalizers"}]'
+        {{ openshift_cli }} delete VolumeSnapshotContent.snapshot.storage.k8s.io {{ item.name }} --grace-period=0  --force
+      ignore_errors: true
+      loop: "{{ failed_volsnap_content_list }}"
+      when:
+        - failed_volsnap_content_list is defined
+        - failed_volsnap_content_list | length > 0
+      register: failed_volsnap_content_deleted
+
+- name: '{{ ansible_name_module }} | Logout of the current source cluster to kill any session'
+  ansible.builtin.command: >
+    {{ openshift_cli }} logout \
+      --insecure-skip-tls-verify=true -s {{ backup_src_cluster_console_url }}:{{ backup_src_cluster_console_port | d('6443', true) }}
+  when:
+    - not skip_api_login_logout is defined or not skip_api_login_logout | bool
+

@@ -1,4 +1,14 @@
 ---
+- name: '{{ ansible_name_module }} | set_fact | set actual ttl'
+  ansible.builtin.set_fact:
+    restore_ttl: '0h10m0s'
+
+- name: '{{ ansible_name_module }} | set_fact | set actual ttl'
+  ansible.builtin.set_fact:
+    restore_ttl: '{{ elapsed_hours }}h{{ elapsed_minutes }}m{{ elapsed_seconds }}s'
+  when:
+    - total_seconds is defined and total_seconds | int > (600 / restore_ttl_factor)
+
 - name: '{{ ansible_name_module }} | import_tasks | Import additional restore schedule CR processing tasks'
   ansible.builtin.include_tasks: process-restore-schedule.yml 
   when:
@@ -8,5 +18,7 @@
 
 - name: '{{ ansible_name_module }} | import_tasks | Import additional restore CR processing tasks'
   ansible.builtin.include_tasks: process-restore-cr.yml 
+  vars:
+    oadp_restore_op_ttl: "{{ restore_ttl }}"
   register: oadp_restore_cr_copied
 

@@ -39,6 +39,11 @@
 - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | all bound pvcs filtered namespaces in cluster namespaces'
   ansible.builtin.shell: >
     {{ openshift_cli }} get pvc -A -ojson | jq -r '.items[] | select([.status.phase] | inside(["Bound"])) | .metadata.namespace' | uniq  | egrep -vi "{{ excluded_ns | join('|') }}" 
+  when:
+    - apply_ns_exlusion is defined
+    - apply_ns_exlusion | bool
+    - excluded_ns is defined
+    - excluded_ns | length > 0
   register: bound_pvcs_namespaces_filtered
 
 - name: '{{ ansible_name_module }} | set_fact | set bound_pvcs_namespaces_list in array format'

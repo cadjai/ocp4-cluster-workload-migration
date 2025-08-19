@@ -10,7 +10,7 @@ spec:
   excludedNamespaces: []
   preserveNodePorts: true
   existingResourcePolicy: none
-  itemOperationTimeout: 4h0m0s
+  itemOperationTimeout: {{ oadp_restore_op_ttl | default('4h0m0s', true) }}
   backupName: {{ backup_name }} 
   includedNamespaces: []
 {% if excluded_resources_list is defined and excluded_resources_list | default([], true) | length > 0 %}

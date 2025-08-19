@@ -5,17 +5,27 @@
   when:
     - not manifest_backup_staging_dir is defined or not manifest_backup_staging_dir != ''
 
-- name: '{{ ansible_name_module }} | set_fact | manifest_backup_staging_dir '
+- name: '{{ ansible_name_module }} | set_fact | ns_manifest_backup_staging_dir '
   ansible.builtin.set_fact:
-    ns_manifest_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/ns" 
+    ns_manifest_backup_staging_dir: "{{ manifest_backup_staging_dir }}/ns" 
   when:
     - not ns_manifest_backup_staging_dir is defined or not ns_manifest_backup_staging_dir != ''
 
 - name: '{{ ansible_name_module }} | set_fact | roles_manifest_backup_staging_dir '
   ansible.builtin.set_fact:
-    roles_manifest_backup_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/manifests/roles" 
+    roles_manifest_backup_staging_dir: "{{ manifest_backup_staging_dir }}/roles" 
   when:
     - not roles_manifest_backup_staging_dir is defined or not roles_manifest_backup_staging_dir != ''
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure previous staging dir is removed '
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+    mode: 0777
+  loop:
+    - "{{ manifest_backup_staging_dir }}"
+    - "{{ ns_manifest_backup_staging_dir }}"
+    - "{{ roles_manifest_backup_staging_dir }}"
 
 - name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the manifests download staging dir exist '
   ansible.builtin.file:

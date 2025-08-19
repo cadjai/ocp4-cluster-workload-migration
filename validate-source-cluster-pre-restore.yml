@@ -2,7 +2,9 @@
   hosts: localhost
   vars_files:
     - 'vars/vault.yml'
+    - 'vars/global.yml'
     - 'vars/oadp-migration.yml'
+    - 'vars/oadp-restore-ns.yml'
   vars:
     ansible_python_interpreter: /usr/bin/python3
     module: "Validate OADP Backup objects on source cluster Pre restore"
@@ -44,5 +46,11 @@
             - not backup_src_cluster_console_port is defined or backup_src_cluster_console_port == ''
 
   tasks:
-    - name: '{{ ansible_name_module }} | import_tasks | Import Source backup Cluster backup CRs additional tasks'
+    - name: '{{ ansible_name_module }} | include_tasks | Import Source backup Cluster backup CRs additional tasks'
       ansible.builtin.import_tasks: tasks/check-backup-objects-pre-restore.yml 
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import  additional DU namespace processing tasks'
+      ansible.builtin.include_tasks: tasks/retrieve-completed-data-upload-info.yml
+
+    - name: '{{ ansible_name_module }} | include_tasks | Import additional no DU namespace raw manifests processing tasks'
+      ansible.builtin.include_tasks: tasks/download-completed-backups-no-data-uploads-raw-manifests.yml 

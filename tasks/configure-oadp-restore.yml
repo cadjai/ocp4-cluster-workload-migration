@@ -1,4 +1,11 @@
 ---
+### Download raw manifest from S3 bucket '
+#  Adding this here since it also contains the vars for backup to restore
+- name: '{{ ansible_name_module }} | import_tasks | Import additional raw manifest download tasks'
+  ansible.builtin.include_tasks: tasks/download-raw-manifests-from-s3-bucket.yml
+  vars:
+    backup_name: "{{ default_backup_name }}"
+
 - name: '{{ ansible_name_module }} | Ensure the OADP operator is installed'
   block:
     - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get  | project {{ oadp_restore_ns }}'
@@ -127,75 +134,27 @@
     - oadp_bsl_phase_out.stdout != ''
     - "'Available' in oadp_bsl_phase_out.stdout"
 
-- name: '{{ ansible_name_module }} | Configure OADP Restore  '
+- name: '{{ ansible_name_module }} | find | Find all ns restore var file files'
+  ansible.builtin.find:
+    path: "{{ raw_manifests_backup_staging_dir }}"
+    recurse: yes
+    patterns: 'oadp-restore-ns.yml'
+  register: restore_ns_var
+
+- name: '{{ ansible_name_module }} | set_fact | all ns restore var file file paths'
+  ansible.builtin.set_fact:
+    restore_ns_var_file_paths: "{{ restore_ns_var.files | map(attribute='path') | list }}"
   when:
-    - not backups_to_restore is defined or backups_to_restore | length == 0 or backups_to_restore == ''
-  block:
-    - name: '{{ ansible_name_module }} | set_fact | set select filter string to use'
-      ansible.builtin.set_fact:
-        oadp_restore_select_filter_strg: '{{ oadp_restore_select_filter_complex }}'
-      when:
-        - use_oadp_complex_select_filter is defined
-        - use_oadp_complex_select_filter | bool
-        - oadp_restore_select_filter_complex is defined
-        - oadp_restore_select_filter_complex != ''
+    - restore_ns_var is defined
+    - restore_ns_var.files is defined
+    - restore_ns_var.files | length > 0
 
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | {"name": .metadata.name, "namespace_list": .spec.includedNamespaces}' | jq -s
-      when:
-        - not backups_to_restore is defined or backups_to_restore | length == 0 
-      register: completed_oadp_backup_out
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
-      ansible.builtin.debug:
-        msg: "{{ completed_oadp_backup_out.stdout | from_json }}"
-        verbosity: 2
-
-    - name: '{{ ansible_name_module }} | set_fact | set completed_oadp_backup_list in array format'
-      ansible.builtin.set_fact:
-        completed_oadp_backup_list: '{{ completed_oadp_backup_out.stdout | from_json }}'
-      when:
-        - completed_oadp_backup_out is defined
-        - completed_oadp_backup_out.rc is defined
-        - completed_oadp_backup_out.rc == 0
-        - completed_oadp_backup_out.stdout is defined
-        - completed_oadp_backup_out.stdout != '' 
-
-    - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print all backup list output '
-      ansible.builtin.debug:
-        var: completed_oadp_backup_list 
-        verbosity: 2
-
-    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup to process if none was provided'
-      ansible.builtin.shell: >
-        {{ openshift_cli }} get backup.velero.io -n  {{ oadp_restore_ns }} -o json | jq -r '.items[] | {{ oadp_restore_select_filter_strg }} | .metadata.name' 
-      when:
-        - not backups_to_restore is defined or backups_to_restore | length == 0 
-      register: backups_to_restore_raw_out
-
-    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore_list in array format'
-      ansible.builtin.set_fact:
-        backups_to_restore_list: '{{ backups_to_restore_raw_out.stdout_lines | list }}'
-      when:
-        - backups_to_restore_raw_out is defined
-        - backups_to_restore_raw_out.rc is defined
-        - backups_to_restore_raw_out.rc == 0
-        - backups_to_restore_raw_out.stdout_lines is defined
-        - backups_to_restore_raw_out.stdout | length > 0 
-
-    - name: '{{ ansible_name_module }} | set_fact | set filtered_backups_to_restore list'
-      ansible.builtin.set_fact:
-        filtered_backups_to_restore: '{{ backups_to_restore_list | symmetric_difference(backups_to_exclude_from_restore) }}'
-      when:
-        - backups_to_exclude_from_restore is defined
-        - backups_to_exclude_from_restore | length > 0 
-
-    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
-      ansible.builtin.set_fact:
-        backups_to_restore: '{{ filtered_backups_to_restore if filtered_backups_to_restore | d([], true) | length > 0 else backups_to_restore_list }}'
-      when:
-        - not backups_to_restore is defined or backups_to_restore | length == 0 
+- name: '{{ ansible_name_module }} | write namespace list var to file '
+  ansible.builtin.copy:
+    src: "{{ restore_ns_var_file_paths[0] }}"
+    dest: "{{ playbook_dir }}/../vars/{{ restore_ns_var_file_paths[0] | basename }}"
+    force: true
+  register: namespaces_to_restore_var_file_copied
 
 - name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of backups to restore output '
   ansible.builtin.debug:
@@ -236,15 +195,27 @@
         {{ openshift_cli }} get backupstoragelocation.velero.io -n {{ oadp_restore_ns }} --no-headers | awk '{print $1}'
       register: oadp_storage_restore_location_out
 
+    - name: '{{ ansible_name_module }} | set_fact | set restore_ttl_factor'
+      ansible.builtin.set_fact:
+        restore_ttl_factor: '3'
+      when:
+        - not restore_ttl_factor is defined or restore_ttl_factor == '' or restore_ttl_factor | int < 3
+
          ###  Porcess restore per namespace'
     - name: '{{ ansible_name_module }} | import_tasks | Import additional restore processing tasks'
       ansible.builtin.include_tasks: process-restore.yml
       loop: "{{ backups_to_restore }}"
+      loop_control:
+        index_var: key_cnt
       vars:
         backup_name: "{{ item }}"
         add_oadp_schedule: 'false'
         restore_name: "{{ item }}-restore"
         oadp_storage_backup_location: "{{ oadp_storage_restore_location_out.stdout }}"
+        total_seconds: "{{ ((completed_oadp_backup_list[key_cnt].endtime | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - (completed_oadp_backup_list[key_cnt].starttime | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds()}}"
+        elapsed_hours: "{{ (((completed_oadp_backup_list[key_cnt].endtime | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - (completed_oadp_backup_list[key_cnt].starttime | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() x restore_ttl_factor / 3600) | int }}"
+        elapsed_minutes: "{{ ((((completed_oadp_backup_list[key_cnt].endtime | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - (completed_oadp_backup_list[key_cnt].starttime | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() x restore_ttl_factor % 3600) / 60) | int }}"
+        elapsed_seconds: "{{ ((completed_oadp_backup_list[key_cnt].endtime | to_datetime('%Y-%m-%dT%H:%M:%SZ')) - (completed_oadp_backup_list[key_cnt].starttime | to_datetime('%Y-%m-%dT%H:%M:%SZ'))).total_seconds() x restore_ttl_factor % 60 }}"
       when:
         - process_backup_per_namespace is defined
         - process_backup_per_namespace | bool
@@ -266,8 +237,3 @@
       ansible.builtin.set_fact:
         backups_to_restore: [] 
 
-        ### Download raw manifest from S3 bucket '
-    - name: '{{ ansible_name_module }} | import_tasks | Import additional raw manifest download tasks'
-      ansible.builtin.include_tasks: tasks/download-raw-manifests-from-s3-bucket.yml
-      vars:
-        backup_name: "{{ default_backup_name }}"

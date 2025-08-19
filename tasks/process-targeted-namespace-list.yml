@@ -23,7 +23,7 @@
         - not namespaces_to_backup is defined or namespaces_to_backup | length == 0
 
 ### For OADP with CSI snapshot and data mover it is best to only backup NS with bound persistence
-    ## So the process below will only include NS with bound PVCs. If all is needed then provide the override togggle
+## So the process below will only include NS with bound PVCs. If all is needed then provide the override toggle
 - name: '{{ ansible_name_module }} | Process Namespace to include '
   when:
     - not force_whole_cluster_backup is defined or not force_whole_cluster_backup | bool
@@ -33,7 +33,7 @@
 
     - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_to_backup'
       ansible.builtin.set_fact:
-        updated_namespaces_to_backup: '{{ filtered_namespace_with_pvcs_yaml }}'
+        updated_namespaces_to_backup: '{{ filtered_namespace_with_pvcs_yaml if filtered_namespace_with_pvcs_yaml is defined and filtered_namespace_with_pvcs_yaml | length > 0 else namespace_with_pvcs_yaml }}'
 
     - name: '{{ ansible_name_module }} | set_fact | set updated_namespaces_excluded_from_backup'
       ansible.builtin.set_fact:

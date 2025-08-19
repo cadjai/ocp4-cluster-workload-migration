@@ -1,0 +1,210 @@
+---
+### Retrieve the list of DataUpload associated to the list of backup to ensure there are things to restore
+- name: '{{ ansible_name_module }} | process backup dataupload '
+  when:
+    - process_du is defined
+    - process_du | bool 
+  block:
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup dataupload to process'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name ' 
+      register: dus_to_restore_raw_out
+    
+    - name: '{{ ansible_name_module }} | set_fact | set dus_to_restore in array format'
+      ansible.builtin.set_fact:
+        dus_to_restore: '{{ dus_to_restore_raw_out.stdout_lines | list }}'
+      when:
+        - dus_to_restore_raw_out is defined
+        - dus_to_restore_raw_out.stdout is defined
+        - dus_to_restore_raw_out.stdout != ''
+        - dus_to_restore_raw_out.stdout_lines is defined
+        - dus_to_restore_raw_out.stdout_lines | length > 0
+    
+    - name: '{{ ansible_name_module }} | Assert that there are dataupload for the backup to restore '
+      assert:
+        that:
+          - dus_to_restore is defined
+          - dus_to_restore | length > 0
+        msg: " the backup to restore need to have associated dataupload in order to be restored "
+    
+    - name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup namespace associated with DU to process'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"])) | .metadata.name | ltrimstr("{{ default_backup_name }}-") | .[:-6]' | uniq
+      register: dus_to_restore_namespaces
+    
+    - name: '{{ ansible_name_module }} | set_fact | set dus_to_restore_namespaces in array format'
+      ansible.builtin.set_fact:
+        backup_to_restore_namespaces_list: '{{ dus_to_restore_namespaces.stdout_lines | list }}'
+      when:
+        - dus_to_restore_namespaces is defined
+        - dus_to_restore_namespaces.stdout is defined
+        - dus_to_restore_namespaces.stdout != '' 
+        - dus_to_restore_namespaces.stdout_lines is defined
+        - dus_to_restore_namespaces.stdout_lines | length > 0 
+    
+    - name: '{{ ansible_name_module }} | set_fact | set filtered_backups_to_restore_ns list'
+      ansible.builtin.set_fact:
+        filtered_backups_to_restore_ns: '{{ backup_to_restore_namespaces_list | symmetric_difference(backups_to_exclude_from_restore) }}'
+      when:
+        - backups_to_exclude_from_restore is defined
+        - backups_to_exclude_from_restore | length > 0
+    
+    - name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+      ansible.builtin.set_fact:
+        backups_to_restore_ns: '{{ filtered_backups_to_restore_ns if filtered_backups_to_restore_ns | d([], true) | length > 0 else backup_to_restore_namespaces_list }}'
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get  | oadp backup with dataupload to process'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get dataupload.velero.io  -n  {{ oadp_backup_ns }} -o json | jq -r '.items[] | select([.status.phase] | inside(["Completed"]))  | select(.metadata.ownerReferences[0].name | contains("{{ default_backup_name }}")) | {"name": .metadata.name, "backup": .metadata.ownerReferences[0].name}' | jq -s '. | group_by(.backup) | map({backup: .[0].backup, ducount: length})' | jq -r '.[] | .backup' 
+  register: backup_to_restore_raw_out
+
+- name: '{{ ansible_name_module }} | set_fact | set backup_to_restore_list in array format'
+  ansible.builtin.set_fact:
+    backup_to_restore_list: '{{ backup_to_restore_raw_out.stdout_lines | list }}'
+  when:
+    - backup_to_restore_raw_out is defined
+    - backup_to_restore_raw_out.stdout is defined
+    - backup_to_restore_raw_out.stdout != '' 
+    - backup_to_restore_raw_out.stdout_lines is defined
+    - backup_to_restore_raw_out.stdout_lines | length > 0 
+
+- name: '{{ ansible_name_module }} | Assert that there are backup to restore '
+  assert:
+    that:
+      - backup_to_restore_list is defined
+      - backup_to_restore_list | length > 0
+    msg: " there needs to be at least a valid namespace assocaiated with the backups to restore "
+
+- name: '{{ ansible_name_module }} | set_fact | set backups_to_restore in array format'
+  ansible.builtin.set_fact:
+    backups_to_restore: '{{ backup_to_restore_list }}'
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print list of backups to restore output '
+  ansible.builtin.debug:
+    var: backups_to_restore
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | Assert that there are backup to restore '
+  assert:
+    that:
+      - backups_to_restore is defined
+      - backups_to_restore | length > 0
+    msg: " the backup to restore need to exist in order to be restored "
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print count of backups to restore output '
+  ansible.builtin.debug:
+    msg: " The count of completed backup to restore is:  {{ backups_to_restore | length }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | set_fact | restore_nslist_staging_dir '
+  ansible.builtin.set_fact:
+    restore_nslist_staging_dir: "{{ staging_dir | d('/tmp', true) }}/{{ backup_name }}/restorens"
+  when:
+    - not restore_nslist_staging_dir is defined or not restore_nslist_staging_dir != ''
+ 
+- name: '{{ ansible_name_module }} | set_fact | restore_nslist_var_file '
+  ansible.builtin.set_fact:
+    restore_nslist_var_file: "{{ restore_nslist_staging_dir }}/oadp-restore-ns.yml"
+  when:
+    - not restore_nslist_var_file is defined or not restore_nslist_var_file != ''
+ 
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the restore NS staging dir exist '
+  ansible.builtin.file:
+    path: "{{ restore_nslist_staging_dir }}"
+    state: directory
+    mode: 0777
+
+- name: '{{ ansible_name_module }} | ansible.builtin.file | Ensure the restore NS file exist '
+  ansible.builtin.file:
+    path: "{{ restore_nslist_var_file }}"
+    state: touch 
+    mode: 0777
+    force: true
+
+- name: '{{ ansible_name_module }} | write namespace list var to file '
+  ansible.builtin.copy:
+    content: |
+      ---
+      backups_to_restore: 
+      {{ backups_to_restore  | to_nice_yaml | indent(2, true) }}
+    dest: "{{ restore_nslist_var_file }}"
+    force: true
+  when:
+    - not process_du is defined or not process_du | bool or not backups_to_restore_ns is defined or  backups_to_restore_ns | length == 0
+  register: namespaces_to_restore_var_file_created
+
+- name: '{{ ansible_name_module }} | write namespace list var to file '
+  ansible.builtin.copy:
+    content: |
+      ---
+      backups_to_restore: 
+      {{ backups_to_restore  | to_nice_yaml | indent(2, true) }}
+      backups_to_restore_ns: 
+      {{ backups_to_restore_ns  | to_nice_yaml | indent(2, true) }}
+    dest: "{{ restore_nslist_var_file }}"
+    force: true
+  when:
+    - process_du is defined
+    - process_du | bool 
+    - backups_to_restore_ns is defined
+    - backups_to_restore_ns | length > 0 
+  register: namespaces_to_restore_var_file_created
+
+- name: '{{ ansible_name_module }} | upload raw manifests to S3 bucket '
+  block:
+    - name: '{{ ansible_name_module }} | assert | the oadp bucket s3url is defined'
+      ansible.builtin.assert:
+        that:
+          - oadp_s3url is defined and oadp_s3url != ""
+        msg: " the oadp_s3url must be set and valid "
+ 
+    - name: '{{ ansible_name_module }} | assert | the bucket name is defined'
+      ansible.builtin.assert:
+        that:
+          - oadp_s3_bucket is defined and oadp_s3_bucket != ''
+        msg: " the oadp_s3_bucket must be set to a valid S3 bucket name  "
+ 
+    - name: '{{ ansible_name_module }} | assert | the bucket access key is defined'
+      ansible.builtin.assert:
+        that:
+          - oadp_bucket_access_key is defined
+          - oadp_bucket_access_key != ''
+        msg: "The repository storage bucket access key is required for the Mig Storgae Repo configuration"
+ 
+    - name: '{{ ansible_name_module }} | assert | the bucket access secret is defined'
+      ansible.builtin.assert:
+        that:
+          - oadp_bucket_access_secret is defined
+          - oadp_bucket_access_secret != ''
+        msg: "The repository storage bucket access secret is required for the Mig Storgae Repo configuration    "
+
+    - name: '{{ ansible_name_module }} | command:which | Check if aws cli is installed'
+      ansible.builtin.shell: >
+        which aws
+      ignore_errors: yes
+      register: aws_binary
+
+    - name: '{{ ansible_name_module }} | assert | the AWS CLI binary is defined'
+      ansible.builtin.assert:
+        that:
+          - aws_binary is defined
+          - aws_binary.rc is defined
+          - aws_binary.rc == 0
+          - aws_binary.stdout is defined
+          - aws_binary.stdout != ''
+        msg: "The AWS CLI binary is required to upload the raw manifest to the S3 bucket "
+
+    - name: '{{ ansible_name_module }} | set_fact | aws_cli '
+      ansible.builtin.set_fact:
+        aws_cli: '{{ aws_binary.stdout }}'
+
+    - name: '{{ ansible_name_module }} | command:shell | copy raw manifest directory to S3 bucket'
+      ansible.builtin.shell: >
+        {{ aws_cli }} s3 --region {{ oadp_bucket_region }} sync {{ restore_nslist_staging_dir }}/ \
+         s3://{{ oadp_s3_bucket }}/raw-manifests/{{ restore_nslist_staging_dir | basename }} \
+         --endpoint-url https://{{ oadp_s3url }} --no-verify-ssl
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ oadp_bucket_access_key }}"
+        AWS_SECRET_ACCESS_KEY: "{{ oadp_bucket_access_secret }}"
+      register: manifests_uploaded
+                                                                    

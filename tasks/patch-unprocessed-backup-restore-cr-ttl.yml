@@ -1,0 +1,68 @@
+---
+- name: '{{ ansible_name_module }} | assert | the velero cr type is defined'
+  ansible.builtin.assert:
+    that:
+      - velero_cr is defined
+      - velero_cr != ''
+      - "'backup' in velero_cr or 'restore' in velero_cr"
+    msg: "The Velero needs to be defined and be either backup or restore "
+
+- name: '{{ ansible_name_module }} | assert | the velero cr namespace is defined'
+  ansible.builtin.assert:
+    that:
+      - velero_cr_ns is defined
+      - velero_cr_ns != ''
+    msg: "The Velero CR namespace needs to be defined "
+
+- name: '{{ ansible_name_module }} | assert | the velero cr ttl is defined'
+  ansible.builtin.assert:
+    that:
+      - velero_cr_op_ttl is defined
+      - velero_cr_op_ttl != ''
+    msg: "The Velero CR ttl needs to be defined "
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | velero CRs count'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get {{ velero_cr }}.velero.io -n {{ velero_cr_ns }}  --no-headers |  wc -l
+  ignore_errors: 'true'
+  register: velero_cr_count
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | processed velero CRs count'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get {{ velero_cr }}.velero.io -n {{ velero_cr_ns }}  --no-headers -o json | jq -r '.items[] | select(has("status"))' | jq -s length
+  ignore_errors: 'true'
+  register: processed_velero_cr_count
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print velero CRs count output '
+  ansible.builtin.debug:
+    msg: " The count of velero CRs is : {{ velero_cr_count.stdout }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Processed velero CRs count output '
+  ansible.builtin.debug:
+    msg: " The count of Processed velero CRs is : {{ processed_velero_cr_count.stdout }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} get | unprocessed velero CRs'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get {{ velero_cr }}.velero.io -n {{ velero_cr_ns }}  --no-headers -o json | jq -r '.items[] | select(has("status") | not ) | .metadata.name'
+  ignore_errors: 'true'
+  register: unporcessed_velero_crs
+
+- name: '{{ ansible_name_module }} | ansible.builtin.debug | Print Unprocessed velero CRs count output '
+  ansible.builtin.debug:
+    msg: " The count of Unprocessed velero CRs is : {{ unporcessed_velero_crs.stdout_lines | length }}"
+    verbosity: 2
+
+- name: '{{ ansible_name_module }} | shell:{{ openshift_cli }} patch | patch ttl on unprocessed velero CRs'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} patch {{ velero_cr }}.velero.io {{ item }} -n {{ velero_cr_ns }} --type merge -p '{"spec": {"itemOperationTimeout": "{{ velero_cr_op_ttl }}" }}'
+  loop: "{{ unporcessed_velero_crs.stdout_lines }}"
+  when:
+    - unporcessed_velero_crs is defined
+    - unporcessed_velero_crs.rc is defined
+    - unporcessed_velero_crs.rc == 0
+    - unporcessed_velero_crs.stdout_lines is defined
+    - unporcessed_velero_crs.stdout_lines | length > 0
+  register: unporcessed_velero_crs
+
