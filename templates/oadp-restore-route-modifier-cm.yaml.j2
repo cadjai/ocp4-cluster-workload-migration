@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap 
+metadata:
+  name: change-route-host-config
+  namespace: {{ oadp_restore_ns }} 
+  labels:
+    cluster-id: {{ cluster_id }}
+    cluster-name: {{ cluster_name }}
+    velero.io/plugin-config: ""
+    velero.io/change-storage-class: RestoreItemAction
+data:
+  route-resource-modifier.yaml: |+
+    ---
+    version: v1
+    resourceModifierRules:
+    - conditions:
+        groupResource: routes
+        resourceNameRegex: ".*"
+      patches:
+      - operation: test
+        path: "/spec/host"
+        value: ".apps.{{ backup_cluster_domain }}"
+      - operation: replace
+        path: "/spec/host"
+        value: ".apps.{{ restore_cluster_domain }}" 

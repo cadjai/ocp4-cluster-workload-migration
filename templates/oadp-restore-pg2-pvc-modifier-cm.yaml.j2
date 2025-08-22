@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap 
+metadata:
+  name: change-gp2-pvc-config
+  namespace: {{ oadp_restore_ns }} 
+  labels:
+    cluster-id: {{ cluster_id }}
+    cluster-name: {{ cluster_name }}
+    velero.io/plugin-config: ""
+    velero.io/change-storage-class: RestoreItemAction
+data:
+  gp2-pvc-resource-modifier.yaml: |+
+    ---
+    version: v1
+    resourceModifierRules:
+    - conditions:
+        groupResource: persistentvolumeclaims
+        resourceNameRegex: ".*"
+      patches:
+      - operation: test
+        path: "/spec/storageClassName"
+        value: "gp2-csi"
+      - operation: replace
+        path: "/spec/storageClassName"
+        value: "gp3-csi" 

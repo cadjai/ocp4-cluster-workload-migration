@@ -59,6 +59,10 @@ spec:
       timeout: {{ oadp_dpa_timeout | d('5h', true) }}
       uploaderType: kopia
     velero:
+{% if add_api_groups_feature is defined and add_api_groups_feature | bool %}
+      featureFlags:
+        EnableAPIGroupVersions
+{% endif %}
       args:
         default-item-operation-timeout: 14400000000000
         default-repo-maintain-frequency: 14400000000000

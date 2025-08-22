@@ -82,6 +82,18 @@
                 ocp_cluster_token: "{{ restore_dest_cluster_token }}" 
                 ocp_cluster_console_port: "{{ restore_dest_cluster_console_port }}" 
 
+    - name: '{{ ansible_name_module }} | Ensure required variables are set for route host resource modifier'
+      when:
+        - add_oadp_route_host_resource_modifier_cm is defined
+        - add_oadp_route_host_resource_modifier_cm | bool
+      block:
+        - name: '{{ ansible_name_module }} | assert | the Source Cluster API URL is defined'
+          ansible.builtin.assert:
+            that:
+              - backup_cluster_domain is defined
+              - backup_cluster_domain != ''
+            msg: "The backup cluster domain is required to configure the route host resource modifier"
+
     - name: Install required pip library
       pip:
         name: openshift
@@ -126,7 +138,29 @@
         - cluster_infra_id.stdout is defined
         - cluster_infra_id.stdout != ''
 
-    - name: '{{ ansible_name_module }} | set_fact | cluster_id '
+    - name: '{{ ansible_name_module }} | set restore_cluster_domain restore if not provided '
+      when:
+        - add_oadp_route_host_resource_modifier_cm is defined
+        - add_oadp_route_host_resource_modifier_cm | bool
+        - not restore_cluster_domain is defined or restore_cluster_domain == ''
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | restore cluster default domain '
+          ansible.builtin.command: >
+            {{ openshift_cli }} get dns cluster -ojsonpath='{.spec.domain}{"\n"}'
+          ignore_errors: true
+          register: cluster_domain_exist
+
+        - name: '{{ ansible_name_module }} | set_fact | restore_cluster_domain '
+          ansible.builtin.set_fact:
+            restore_cluster_domain: "{{ cluster_domain_exist.sdout }}"
+          when:
+            - cluster_domain_exist is defined
+            - cluster_domain_exist.rc is defined
+            - cluster_domain_exist.rc == 0
+            - cluster_domain_exist.stdout is defined
+            - cluster_domain_exist.stdout != ''
+
+    - name: '{{ ansible_name_module }} | set_fact | oadp_backup_ns'
       ansible.builtin.set_fact:
         oadp_backup_ns: "{{ oadp_restore_ns }}"
       when:

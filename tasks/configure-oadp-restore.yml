@@ -71,6 +71,50 @@
         - "'file' in oadp_sc_change_cm_manifest_copied.state"
       register: oadp_sc_change_cm_manifest_applied
 
+- name: '{{ ansible_name_module }} | Add gp2 sc pvc resource modifier CM'
+  when:
+    - add_oadp_gp2_sc_resource_modifier_cm is defined
+    - add_oadp_gp2_sc_resource_modifier_cm | bool
+  block:
+    - name: '{{ ansible_name_module }} | template | Render oadp-change-sc-cm.yaml.j2 CM'
+      ansible.builtin.template:
+        src: "templates/oadp-restore-pg2-pvc-modifier-cm.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-pg2-pvc-modifier-cm.yaml"
+        force: yes
+      register: oadp_gp2_sc_rm_cm_manifest_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP SC Change CM'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ oadp_gp2_sc_rm_cm_manifest_copied.dest }}
+      when:
+        - oadp_gp2_sc_rm_cm_manifest_copied is defined
+        - oadp_gp2_sc_rm_cm_manifest_copied.dest is defined
+        - oadp_gp2_sc_rm_cm_manifest_copied.state is defined
+        - "'file' in oadp_gp2_sc_rm_cm_manifest_copied.state"
+      register: oadp_gp2_sc_rm_cm_manifest_applied
+
+- name: '{{ ansible_name_module }} | Add route host domain resource modifier CM'
+  when:
+    - add_oadp_route_host_resource_modifier_cm is defined
+    - add_oadp_route_host_resource_modifier_cm | bool
+  block:
+    - name: '{{ ansible_name_module }} | template | Render oadp-change-sc-cm.yaml.j2 CM'
+      ansible.builtin.template:
+        src: "templates/oadp-restore-route-modifier-cm.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ restore_name }}-oadp-restore-route-modifier-cm.yaml"
+        force: yes
+      register: oadp_rute_host_rm_cm_manifest_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | create OADP Route Host Resource Modifier CM'
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ oadp_rute_host_rm_cm_manifest_copied.dest }}
+      when:
+        - oadp_rute_host_rm_cm_manifest_copied is defined
+        - oadp_rute_host_rm_cm_manifest_copied.dest is defined
+        - oadp_rute_host_rm_cm_manifest_copied.state is defined
+        - "'file' in oadp_rute_host_rm_cm_manifest_copied.state"
+      register: oadp_rute_host_rm_cm_manifest_applied
+
 ###  Configure ODP DPA
 - name: '{{ ansible_name_module }} | import_tasks | Import additional DPA processing tasks'
   ansible.builtin.include_tasks: configure-oadp-dpa.yml
