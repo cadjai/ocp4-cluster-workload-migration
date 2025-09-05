@@ -123,7 +123,7 @@ blue_green_routing:
     blue_subdomain: "dev-blue"
     green_subdomain: "dev-green"
 
-  # Backend server configurations
+  # Backend server configurations (these are your vip or LB to the active clusters)
   backends:
     http_servers:
       - name: "dev-blue-1"
