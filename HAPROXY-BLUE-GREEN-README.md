@@ -197,28 +197,7 @@ sudo systemctl enable --now haproxy-blue-green.service
 ```
 
 ## Blue-Green Switching
-
-### Using the Switching Script
-
-The playbook generates a switching script for easy environment changes:
-
-```bash
-# Switch dev cluster to green environment
-./switch-blue-green.sh dev green
-
-# Switch prod cluster to blue environment
-./switch-blue-green.sh prod blue
-```
-
-### Manual Configuration Update
-
-Edit the variables file and re-run the playbook:
-
-```yaml
-# Change active_color for the target cluster
-- name: 'dev'
-  active_color: 'green'  # Changed from 'blue' to 'green'
-```
+ To switch active cluster the best approach is to update variable file and then rerun the playbook to regenerate the haproxy.cfg file to the new configuration.
 
 ```bash
 # Re-run the playbook to apply changes
@@ -283,37 +262,21 @@ sudo journalctl -u haproxy-blue-green.service -f
 │   ├── deploy-haproxy-container.yml             # Podman deployment tasks
 │   └── deploy-haproxy-kubernetes.yml            # Kubernetes deployment tasks
 ├── templates/
-│   ├── haproxy.cfg.j2                          # HAProxy configuration template
-│   ├── switch-blue-green.sh.j2                 # Environment switching script
-│   ├── haproxy-container.container.j2           # Quadlet container template
-│   └── haproxy-network.network.j2              # Quadlet network template
+│   ├── haproxy-blue-green.cfg.j2                # HAProxy configuration template
+│   ├── haproxy-quadlet.container.j2             # Quadlet container template
+│   └── haproxy-quadlet.network.j2               # Quadlet network template
 └── manifests/
     ├── kubernetes/                              # Standalone Kubernetes manifests
+    │   ├── configmap.yaml
     │   ├── namespace.yaml
     │   ├── deployment.yaml
     │   └── service.yaml
     └── podman/                                  # Standalone Podman manifests
         └── haproxy-blue-green.container
+        └── haproxy-network.network 
 ```
 
 ## Customization
-
-### Adding New Clusters
-
-Add new cluster configurations to the `haproxy_blue_green_clusters` list:
-
-```yaml
-haproxy_blue_green_clusters:
-  - name: 'staging'
-    domain: 'staging.example.com'
-    blue_endpoint: 'staging-blue.example.com'
-    green_endpoint: 'staging-green.example.com'
-    active_color: 'blue'
-    blue_servers:
-      - { name: 'staging-blue-1', address: '10.2.1.10', port: '443', check: 'check ssl verify none' }
-    green_servers:
-      - { name: 'staging-green-1', address: '10.2.2.10', port: '443', check: 'check ssl verify none' }
-```
 
 ### Custom HAProxy Configuration
 
