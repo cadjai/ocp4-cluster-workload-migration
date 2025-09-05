@@ -3,6 +3,8 @@
   hosts: localhost
   connection: local
   gather_facts: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   vars_files:
     - vars/global.yml
     - vars/haproxy-blue-green.yml
@@ -10,16 +12,25 @@
     - import_tasks: handlers/haproxy-blue-green.yml
   
   tasks:
+    - name: '{{ ansible_name_module }} | set_fact | set ansible_user facts'
+      ansible.builtin.set_fact:
+        ansible_user: "{{ ansible_facts['env']['USER'] }}"
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.debug }} | Print  ansible_user output'
+      ansible.builtin.debug:
+        var: ansible_user
+        verbosity: 2
+
     - name: Include HAProxy configuration tasks
-      include_tasks: tasks/configure-haproxy-blue-green.yml
+      ansible.builtin.include_tasks: tasks/configure-haproxy-blue-green.yml
       
     - name: Deploy HAProxy container (Podman)
-      include_tasks: tasks/deploy-haproxy-podman.yml
+      ansible.builtin.include_tasks: tasks/deploy-haproxy-podman.yml
       when: deployment_method == "podman"
       
     - name: Deploy HAProxy container (Kubernetes)
-      include_tasks: tasks/deploy-haproxy-kubernetes.yml
+      ansible.builtin.include_tasks: tasks/deploy-haproxy-kubernetes.yml
       when: deployment_method == "kubernetes"
       
     - name: Validate HAProxy deployment
-      include_tasks: tasks/validate-haproxy-deployment.yml 
+      ansible.builtin.include_tasks: tasks/validate-haproxy-deployment.yml 

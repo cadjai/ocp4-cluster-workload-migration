@@ -6,95 +6,87 @@ deployment_method: "podman"
 
 # HAProxy container configuration
 haproxy:
-  image: "docker.io/haproxy:2.8"
+  #image: "quay.io/cloudctl/haproxy"
+  image: "registry.connect.redhat.com/haproxytech/haproxy"
   container_name: "haproxy-blue-green"
   http_port: 80
   https_port: 443
   stats_port: 8404
   stats_user: "admin"
-  stats_password: "changeme"
+  stats_password: "r3dh4t1!"
+  config_dir: '/config' ## using empty for root dir to avoid double //
+  config_file: 'haproxy.cfg'
+  cert_dir: '/ssl'
+  cert_path: 'haproxy.pem'
+  cert_file: 'haproxy.crt'
+  cert_key: 'haproxy.key'
   
 # Blue-Green routing configuration
 blue_green_routing:
   # Default environment to route to (blue or green)
-  default_environment: "blue"
+  default_environment: "dev-blue"
+  base_subdomain_prefix: "*.apps"
+  base_subdomain_suffix: "ocp.cluster.example.com"
   
-  # Cluster subdomain mappings
-  cluster_mappings:
-    - source_subdomain: "dev"
-      blue_subdomain: "dev-blue"
-      green_subdomain: "dev-green"
-    - source_subdomain: "staging"
-      blue_subdomain: "staging-blue"
-      green_subdomain: "staging-green"
-    - source_subdomain: "prod"
-      blue_subdomain: "prod-blue"
-      green_subdomain: "prod-green"
+  # Cluster subdomain mapping
+  cluster_subdomain_mapping:
+    source_subdomain: "dev"
+    blue_subdomain: "dev-blue"
+    green_subdomain: "dev-green"
   
   # Backend server configurations
   backends:
-    dev-blue:
-      servers:
-        - name: "dev-blue-1"
-          address: "dev-blue.example.com:80"
-          check: "check"
-        - name: "dev-blue-2"
-          address: "dev-blue-backup.example.com:80"
-          check: "check backup"
-    dev-green:
-      servers:
-        - name: "dev-green-1"
-          address: "dev-green.example.com:80"
-          check: "check"
-        - name: "dev-green-2"
-          address: "dev-green-backup.example.com:80"
-          check: "check backup"
-    staging-blue:
-      servers:
-        - name: "staging-blue-1"
-          address: "staging-blue.example.com:80"
-          check: "check"
-    staging-green:
-      servers:
-        - name: "staging-green-1"
-          address: "staging-green.example.com:80"
-          check: "check"
-    prod-blue:
-      servers:
-        - name: "prod-blue-1"
-          address: "prod-blue.example.com:80"
-          check: "check"
-        - name: "prod-blue-2"
-          address: "prod-blue-backup.example.com:80"
-          check: "check backup"
-    prod-green:
-      servers:
-        - name: "prod-green-1"
-          address: "prod-green.example.com:80"
-          check: "check"
-        - name: "prod-green-2"
-          address: "prod-green-backup.example.com:80"
-          check: "check backup"
+    http_servers:
+      - name: "dev-blue-1"
+        address: "10.2.1.10:80"
+        check: "check"
+      - name: "dev-blue-2"
+        address: "10.2.2.10:80"
+        check: "check backup"
+    https_servers:
+      - name: "dev-blue-1"
+        address: "10.2.1.10:443"
+        check: "check"
+      - name: "dev-blue-2"
+        address: "10.2.2.10:443"
+        check: "check backup"
+
 
 # SSL/TLS configuration
 ssl_config:
   enabled: true
   cert_path: "/etc/ssl/certs/haproxy.crt"
   key_path: "/etc/ssl/private/haproxy.key"
-  redirect_http_to_https: true
+  redirect_http_to_https: false
 
 # Podman deployment configuration
 podman_config:
-  systemd_user: false
+  systemd_user: true
   quadlet_path: "/etc/containers/systemd"
   network_name: "haproxy-network"
+  network_config: ""
+  network_subnet: ""
+  network_gateway: ""
+  network_ip_range: ""
+  network_dns:
+    - 8.8.8.8
+    - 8.8.4.4
   volumes:
     - source: "/opt/haproxy/config"
-      target: "/usr/local/etc/haproxy"
+      target: "{{ haproxy.config_dir | d('/', true) }}"
       type: "bind"
+    - source: "/opt/haproxy/config/haproxy.cfg"
+      target: "{{ haproxy.config_dir }}/{{ haproxy.config_file }}"
+      type: "z"
     - source: "/opt/haproxy/ssl"
-      target: "/etc/ssl"
+      target: "{{ haproxy.cert_dir }}"
       type: "bind"
+    - source: "/opt/haproxy/ssl/haproxy.crt"
+      target: "{{ haproxy.cert_dir }}/{{ haproxy.cert_file }}"
+      type: "z"
+    - source: "/opt/haproxy/ssl/haproxy.key"
+      target: "{{ haproxy.cert_dir }}/{{ haproxy.cert_key }}"
+      type: "z"
 
 # Kubernetes deployment configuration
 kubernetes_config:

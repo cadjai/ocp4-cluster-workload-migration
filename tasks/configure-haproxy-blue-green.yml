@@ -1,21 +1,32 @@
 ---
 - name: Create HAProxy configuration directory
-  file:
+  ansible.builtin.file:
     path: /opt/haproxy/config
     state: directory
     mode: '0755'
   become: yes
 
 - name: Create HAProxy SSL directory
-  file:
+  ansible.builtin.file:
     path: /opt/haproxy/ssl
     state: directory
-    mode: '0700'
+    mode: '0755'
   become: yes
   when: ssl_config.enabled
 
+- name: Create HAProxy test SSL key and cert directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  become: yes
+  when: ssl_config.enabled
+  loop:
+    - "{{ ssl_config.cert_path | dirname }}"
+    - "{{ ssl_config.key_path | dirname }}"
+
 - name: Generate HAProxy configuration file
-  template:
+  ansible.builtin.template:
     src: haproxy-blue-green.cfg.j2
     dest: /opt/haproxy/config/haproxy.cfg
     mode: '0644'
@@ -24,25 +35,15 @@
   notify:
     - restart haproxy container
 
-- name: Generate HAProxy domain mapping file
-  template:
-    src: haproxy-domain-map.txt.j2
-    dest: /opt/haproxy/config/domain_map.txt
-    mode: '0644'
-    backup: yes
-  become: yes
-  notify:
-    - reload haproxy config
-
 - name: Create HAProxy error pages directory
-  file:
+  ansible.builtin.file:
     path: /opt/haproxy/config/errors
     state: directory
     mode: '0755'
   become: yes
 
 - name: Generate custom error pages
-  copy:
+  ansible.builtin.copy:
     content: |
       HTTP/1.0 {{ item.code }} {{ item.message }}
       Cache-Control: no-cache
@@ -66,7 +67,7 @@
     - { code: 504, message: "Gateway Time-out" }
 
 - name: Create SSL certificate if not exists (self-signed for testing)
-  command: |
+  ansible.builtin.command: |
     openssl req -x509 -newkey rsa:4096 -keyout {{ ssl_config.key_path }} \
     -out {{ ssl_config.cert_path }} -days 365 -nodes \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=haproxy.local"
@@ -76,16 +77,18 @@
   when: ssl_config.enabled
 
 - name: Combine SSL certificate and key for HAProxy
-  shell: |
+  ansible.builtin.shell: |
     cat {{ ssl_config.cert_path }} {{ ssl_config.key_path }} > /opt/haproxy/ssl/haproxy.pem
-    chmod 600 /opt/haproxy/ssl/haproxy.pem
+    cp {{ ssl_config.cert_path }} /opt/haproxy/ssl/haproxy.crt
+    cp {{ ssl_config.key_path }} /opt/haproxy/ssl/haproxy.key
+    chmod 644 /opt/haproxy/ssl/haproxy.*
   become: yes
   when: ssl_config.enabled
   notify:
     - restart haproxy container
 
 - name: Set SELinux context for HAProxy directories (if SELinux is enabled)
-  sefcontext:
+  community.general.sefcontext:
     target: "{{ item }}"
     setype: container_file_t
     state: present
@@ -97,7 +100,7 @@
   ignore_errors: yes
 
 - name: Apply SELinux context
-  command: restorecon -R /opt/haproxy
+  ansible.builtin.command: restorecon -R /opt/haproxy
   become: yes
   when: ansible_selinux.status == "enabled"
   ignore_errors: yes 

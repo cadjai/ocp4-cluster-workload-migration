@@ -52,13 +52,22 @@ frontend http_frontend
     redirect scheme https code 301
 {% else %}
     # Blue-Green routing logic for HTTP
-    use_backend %[req.hdr(host),map_dom(/usr/local/etc/haproxy/domain_map.txt,{{ blue_green_routing.default_environment }})]
+    acl is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain hdr(host) -i {{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}
+    # Rewrite Host header to point to active environment
+    http-request set-header Host {{ blue_green_routing.base_subdomain_prefix }}.{{ blue_green_routing.default_environment }}.{{ blue_green_routing.base_subdomain_suffix }} if is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain
+
+    # Add custom headers for debugging and routing info
+    http-request add-header X-Blue-Green-Cluster {{ blue_green_routing.default_environment }} if is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain
+    http-request add-header X-Blue-Green-Active {{ blue_green_routing.default_environment }} if is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain
+    http-request add-header X-Blue-Green-Original-Host {{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }} if is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain
+
+    use_backend %[req.hdr(host),{{ blue_green_routing.default_environment }}.{{ blue_green_routing.base_subdomain_suffix }},{{ blue_green_routing.default_environment }})]
 {% endif %}
 
 {% if ssl_config.enabled %}
 # HTTPS frontend
 frontend https_frontend
-    bind *:{{ haproxy.https_port }} ssl crt {{ ssl_config.cert_path }}
+    bind *:{{ haproxy.https_port }} ssl crt {{ haproxy.cert_dir }}/{{ haproxy.cert_path }}
     
     # Add security headers
     http-response set-header Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -66,29 +75,33 @@ frontend https_frontend
     http-response set-header X-Content-Type-Options "nosniff"
     
     # Blue-Green routing logic for HTTPS
-    use_backend %[req.hdr(host),map_dom(/usr/local/etc/haproxy/domain_map.txt,{{ blue_green_routing.default_environment }})]
+    acl is_{{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}_domain hdr(host) -i {{ blue_green_routing.cluster_subdomain_mapping.source_subdomain }}
+    use_backend %[req.hdr(host),{{ blue_green_routing.default_environment }}.{{ blue_green_routing.base_subdomain_suffix }},https-{{ blue_green_routing.default_environment }})]
 {% endif %}
 
-{% for mapping in blue_green_routing.cluster_mappings %}
-{% set blue_backend = mapping.blue_subdomain %}
-{% set green_backend = mapping.green_subdomain %}
+{% set blue_backend = blue_green_routing.cluster_subdomain_mapping.blue_subdomain %}
+{% set green_backend = blue_green_routing.cluster_subdomain_mapping.green_subdomain %}
 
-# Backend for {{ blue_backend }}
-backend {{ blue_backend }}
+# Backend for {{ blue_green_routing.default_environment }}
+backend {{ blue_green_routing.default_environment }}
     balance roundrobin
     option httpchk GET /health
     http-request set-header Host {{ blue_backend }}.%[req.hdr(host),regsub(^[^.]+\.,)]
-{% for server in blue_green_routing.backends[blue_backend].servers %}
+
+{% if blue_green_routing.backends is defined and blue_green_routing.backends.http_servers is defined and blue_green_routing.backends.http_servers | d([], true) | length > 0 %}
+{% for server in blue_green_routing.backends.http_servers %}
     server {{ server.name }} {{ server.address }} {{ server.check }}
 {% endfor %}
+{% endif %}
 
-# Backend for {{ green_backend }}
-backend {{ green_backend }}
+# Backend for https-{{ blue_green_routing.default_environment }}
+backend https-{{ blue_green_routing.default_environment }}
     balance roundrobin
     option httpchk GET /health
-    http-request set-header Host {{ green_backend }}.%[req.hdr(host),regsub(^[^.]+\.,)]
-{% for server in blue_green_routing.backends[green_backend].servers %}
+    http-request set-header Host {{ blue_backend }}.%[req.hdr(host),regsub(^[^.]+\.,)]
+
+{% if blue_green_routing.backends is defined and blue_green_routing.backends.https_servers is defined and blue_green_routing.backends.https_servers | d([], true) | length > 0 %}
+{% for server in blue_green_routing.backends.https_servers %}
     server {{ server.name }} {{ server.address }} {{ server.check }}
 {% endfor %}
-
-{% endfor %} 
+{% endif %}

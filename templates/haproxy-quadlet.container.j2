@@ -10,46 +10,50 @@ Image={{ haproxy.image }}
 ContainerName={{ haproxy.container_name }}
 
 # Port mappings
+{% if not podman_config.network_config is defined or podman_config.network_config == "" or  podman_config.network_config != "host" %}
 PublishPort={{ haproxy.http_port }}:80
 PublishPort={{ haproxy.https_port }}:443
 PublishPort={{ haproxy.stats_port }}:8404
+{% endif %}
 
 # Volume mounts
 {% for volume in podman_config.volumes %}
-Volume={{ volume.source }}:{{ volume.target }}:{{ volume.type if volume.type is defined else 'bind' }}
+Volume={{ volume.source }}:{{ volume.target }}{{ ":" + volume.type if volume.type is defined and volume.type != "none" else "" if volume.type == "none" else ":bind" }}
 {% endfor %}
 
 # Network configuration
+{% if podman_config.network_config is defined and podman_config.network_config != "" and podman_config.network_config == "host" %}
+Network={{ podman_config.network_config }}
+{% else %}
 Network={{ podman_config.network_name }}
+{% endif %}
 
 # Environment variables
-Environment=HAPROXY_CONFIG=/usr/local/etc/haproxy/haproxy.cfg
+Environment=HAPROXY_CONFIG={{ haproxy.config_dir }}/{{ haproxy.config_file }}
 
 # Security and resource limits
 User=haproxy
 Group=haproxy
-ReadOnlyRootFilesystem=yes
 NoNewPrivileges=yes
-CapDrop=ALL
-CapAdd=NET_BIND_SERVICE
-CapAdd=CHOWN
-CapAdd=SETGID
-CapAdd=SETUID
+DropCapability=ALL
+AddCapability=NET_BIND_SERVICE
+AddCapability=CHOWN
+AddCapability=SETGID
+AddCapability=SETUID
 
 # Logging
 LogDriver=journald
-LogOptions=tag="haproxy-blue-green"
 
 # Health check
-HealthCmd=haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
+HealthCmd=haproxy -c -f {{ haproxy.config_dir }}/{{ haproxy.config_file }} 
 HealthInterval=30s
 HealthRetries=3
 HealthStartPeriod=10s
 HealthTimeout=10s
 
-# Restart policy
-Restart=on-failure
-RestartSec=5s
+# Podman Args 
+#PodmanArgs=--cidfile=%t/%n.ctr-id
+#PodmanArgs=--cidfile=/run/user/1000/%N.cid
 
 [Service]
 Restart=on-failure

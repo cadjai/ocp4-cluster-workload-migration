@@ -5,14 +5,21 @@ Documentation=man:podman-systemd.unit(5)
 
 [Network]
 NetworkName={{ podman_config.network_name }}
-Subnet=172.20.0.0/24
-Gateway=172.20.0.1
-IPRange=172.20.0.0/24
+Subnet={{ podman_config.network_subnet | default('172.20.0.0/24', true) }}
+Gateway={{ podman_config.network_gateway | default('172.20.0.1', true) }}
+IPRange={{ podman_config.network_ip_range | default('172.20.0.0/24', true) }}
 Driver=bridge
 
 # DNS configuration
-DNS=8.8.8.8
-DNS=8.8.4.4
+{% if podman_config.network_backend is defined and podman_config.network_backend != "cni" %}
+{% if podman_config.network_dns is defined and podman_config.network_dns | d([], true) | length > 0 %}
+{% for dns in podman_config.network_dns %}
+{% if dns is defined and dns != "" %}
+DNS={{ dns }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
 
 # Network options
 Options=isolate=false
