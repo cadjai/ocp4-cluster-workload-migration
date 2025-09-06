@@ -25,39 +25,6 @@ The HAProxy load balancer receives requests on standard HTTP/HTTPS ports (80/443
 
 ```mermaid
 graph TB
-    subgraph "Internet/Users"
-        U1[User Request<br/>dev.example.com]
-        U2[User Request<br/>prod.example.com]
-    end
-    
-    subgraph "HAProxy Load Balancer"
-        H[HAProxy<br/>Blue-Green Router<br/>:80, :443]
-        H --> |"Host Header Rewrite"| HR[Header Rewriter<br/>dev.example.com → dev-blue.example.com<br/>prod.example.com → prod-blue.example.com]
-    end
-    
-    subgraph "Development Environment"
-        subgraph "Blue Environment (Active)"
-            subgraph "Blue http_servers"
-                DB1[dev-blue-1<br/>10.0.1.10:80]
-                DB2[dev-blue-2<br/>10.0.1.11:80]
-            end
-            subgraph "Blue https_servers"
-                DB3[dev-blue-1<br/>10.0.1.10:443]
-                DB4[dev-blue-2<br/>10.0.1.11:443]
-            end
-        end
-        subgraph "Green Environment (Standby)"
-            subgraph "Green http_servers"
-                DG1[dev-green-1<br/>10.0.2.10:80]
-                DG2[dev-green-2<br/>10.0.2.11:80]
-            end
-            subgraph "Green https_servers"
-                DG3[dev-green-1<br/>10.0.2.10:443]
-                DG4[dev-green-2<br/>10.0.2.11:443]
-            end
-        end
-    end
-    
     subgraph "Production Environment"
         subgraph "Blue Environment (Active)"
             subgraph "Blue http_servers"
@@ -86,6 +53,39 @@ graph TB
                 PG6[prod-green-3<br/>10.1.2.12:443]
             end
         end
+    end
+
+    subgraph "Development Environment"
+        subgraph "Blue Environment (Active)"
+            subgraph "Blue http_servers"
+                DB1[dev-blue-1<br/>10.0.1.10:80]
+                DB2[dev-blue-2<br/>10.0.1.11:80]
+            end
+            subgraph "Blue https_servers"
+                DB3[dev-blue-1<br/>10.0.1.10:443]
+                DB4[dev-blue-2<br/>10.0.1.11:443]
+            end
+        end
+        subgraph "Green Environment (Standby)"
+            subgraph "Green http_servers"
+                DG1[dev-green-1<br/>10.0.2.10:80]
+                DG2[dev-green-2<br/>10.0.2.11:80]
+            end
+            subgraph "Green https_servers"
+                DG3[dev-green-1<br/>10.0.2.10:443]
+                DG4[dev-green-2<br/>10.0.2.11:443]
+            end
+        end
+    end
+    
+    subgraph "HAProxy Load Balancer"
+        H[HAProxy<br/>Blue-Green Router<br/>:80, :443]
+        H --> |"Host Header Rewrite"| HR[Header Rewriter<br/>dev.example.com → dev-blue.example.com<br/>prod.example.com → prod-blue.example.com]
+    end
+    
+    subgraph "Internet/Users"
+        U1[User Request<br/>dev.example.com]
+        U2[User Request<br/>prod.example.com]
     end
 ```
 
