@@ -55,6 +55,8 @@ graph LR
     end
 ```
 
+## HAProxy Components Diagram (per environment)
+
 ```mermaid
 graph TB 
     subgraph "Production Environment"
