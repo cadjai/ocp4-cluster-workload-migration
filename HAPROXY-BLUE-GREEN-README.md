@@ -104,7 +104,6 @@ graph TB
         U2[User Request<br/>prod.example.com]
     end
     "Internet/Users" --> "HAProxy Load Balancer" 
-    "HAProxy Load Balancer" --> "Environment"
 ```
 
 ## Quick Start
