@@ -55,7 +55,7 @@ graph LR
     end
 ```
 
-## HAProxy Components Diagram (per environment)
+## HAProxy Backends Diagram
 
 ```mermaid
 graph LR 
