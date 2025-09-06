@@ -44,7 +44,7 @@ graph LR
         end
     end
 
-    subgraph "HAProxy Load Balancer" --> E1
+    subgraph "HAProxy Load Balancer" 
         H[HAProxy<br/>Blue-Green Router<br/>:80, :443]
         H --> |"Host Header Rewrite"| HR[Header Rewriter<br/>dev.example.com → dev-blue.example.com<br/>prod.example.com → prod-blue.example.com]
     end
