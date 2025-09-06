@@ -75,8 +75,27 @@ graph TB
         end
     end
     
+    subgraph "Environment"
+        subgraph "Green Environment (Standby)"
+            subgraph "Green https_servers"
+                E1[green<br/>10.0.1.10:443]
+            end
+            subgraph "Green http_servers"
+                E2[green<br/>10.0.1.10:80]
+            end
+        end
+        subgraph "Blue Environment (Active)"
+            subgraph "Blue https_servers"
+                E3[blue<br/>10.0.1.10:443]
+            end
+            subgraph "Blue http_servers"
+                E4[blue<br/>10.0.1.10:80]
+            end
+        end
+    end
+
     subgraph "HAProxy Load Balancer"
-        H[HAProxy<br/>Blue-Green Router<br/>:80, :443]
+        H[HAProxy<br/>Blue-Green Router<br/>:80, :443] --> E3
         H --> |"Host Header Rewrite"| HR[Header Rewriter<br/>dev.example.com → dev-blue.example.com<br/>prod.example.com → prod-blue.example.com]
     end
     
