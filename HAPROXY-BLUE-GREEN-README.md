@@ -37,15 +37,15 @@ graph TB
     
     subgraph "Development Environment"
         subgraph "Blue Environment (Active)"
-            subgraph "http_servers"
-                DB1[dev-blue-1<br/>10.0.1.10:80]
-                DB2[dev-blue-2<br/>10.0.1.11:80]
-            end
+        subgraph "http_servers"
+            DB1[dev-blue-1<br/>10.0.1.10:80]
+            DB2[dev-blue-2<br/>10.0.1.11:80]
+        end
 
-            subgraph "https_servers"
-                DB1[dev-blue-1<br/>10.0.1.10:443]
-                DB2[dev-blue-2<br/>10.0.1.11:443]
-            end
+        subgraph "https_servers"
+            DB1[dev-blue-1<br/>10.0.1.10:443]
+            DB2[dev-blue-2<br/>10.0.1.11:443]
+        end
 
         end
         
