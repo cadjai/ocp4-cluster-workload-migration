@@ -103,7 +103,8 @@ graph TB
         U1[User Request<br/>dev.example.com] 
         U2[User Request<br/>prod.example.com]
     end
-    Internet/Users --> HAProxy Load Balancer --> Environment
+    Internet/Users --> HAProxy Load Balancer 
+    HAProxy Load Balancer --> Environment
 ```
 
 ## Quick Start
