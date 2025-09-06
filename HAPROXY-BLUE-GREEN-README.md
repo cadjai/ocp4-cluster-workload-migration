@@ -27,52 +27,50 @@ The HAProxy load balancer receives requests on standard HTTP/HTTPS ports (80/443
 graph TB
     subgraph "Production Environment"
         subgraph "Green Environment (Standby)"
-            subgraph "Green http_servers"
-                PG1[prod-green-1<br/>10.1.2.10:80]
-                PG2[prod-green-2<br/>10.1.2.11:80]
-                PG3[prod-green-3<br/>10.1.2.12:80]
-            end
-            
             subgraph "Green https_servers"
                 PG4[prod-green-1<br/>10.1.2.10:443]
                 PG5[prod-green-2<br/>10.1.2.11:443]
                 PG6[prod-green-3<br/>10.1.2.12:443]
             end
+            subgraph "Green http_servers"
+                PG1[prod-green-1<br/>10.1.2.10:80]
+                PG2[prod-green-2<br/>10.1.2.11:80]
+                PG3[prod-green-3<br/>10.1.2.12:80]
+            end
         end
         subgraph "Blue Environment (Active)"
-            subgraph "Blue http_servers"
-                PB1[prod-blue-1<br/>10.1.1.10:80]
-                PB2[prod-blue-2<br/>10.1.1.11:80]
-                PB3[prod-blue-3<br/>10.1.1.12:80]
-            end
-            
             subgraph "Blue https_servers"
                 PB4[prod-blue-1<br/>10.1.1.10:443]
                 PB5[prod-blue-2<br/>10.1.1.11:443]
                 PB6[prod-blue-3<br/>10.1.1.12:443]
+            end
+            subgraph "Blue http_servers"
+                PB1[prod-blue-1<br/>10.1.1.10:80]
+                PB2[prod-blue-2<br/>10.1.1.11:80]
+                PB3[prod-blue-3<br/>10.1.1.12:80]
             end
         end
     end
 
     subgraph "Development Environment"
         subgraph "Green Environment (Standby)"
-            subgraph "Green http_servers"
-                DG1[dev-green-1<br/>10.0.2.10:80]
-                DG2[dev-green-2<br/>10.0.2.11:80]
-            end
             subgraph "Green https_servers"
                 DG3[dev-green-1<br/>10.0.2.10:443]
                 DG4[dev-green-2<br/>10.0.2.11:443]
             end
+            subgraph "Green http_servers"
+                DG1[dev-green-1<br/>10.0.2.10:80]
+                DG2[dev-green-2<br/>10.0.2.11:80]
+            end
         end
         subgraph "Blue Environment (Active)"
-            subgraph "Blue http_servers"
-                DB1[dev-blue-1<br/>10.0.1.10:80]
-                DB2[dev-blue-2<br/>10.0.1.11:80]
-            end
             subgraph "Blue https_servers"
                 DB3[dev-blue-1<br/>10.0.1.10:443]
                 DB4[dev-blue-2<br/>10.0.1.11:443]
+            end
+            subgraph "Blue http_servers"
+                DB1[dev-blue-1<br/>10.0.1.10:80]
+                DB2[dev-blue-2<br/>10.0.1.11:80]
             end
         end
     end
