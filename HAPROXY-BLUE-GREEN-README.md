@@ -95,14 +95,15 @@ graph TB
     end
 
     subgraph "HAProxy Load Balancer"
-        H[HAProxy<br/>Blue-Green Router<br/>:80, :443] --> E
+        H[HAProxy<br/>Blue-Green Router<br/>:80, :443]
         H --> |"Host Header Rewrite"| HR[Header Rewriter<br/>dev.example.com → dev-blue.example.com<br/>prod.example.com → prod-blue.example.com]
     end
     
     subgraph "Internet/Users"
-        U1[User Request<br/>dev.example.com] --> H
+        U1[User Request<br/>dev.example.com] 
         U2[User Request<br/>prod.example.com]
     end
+    Internet/Users --> HAProxy Load Balancer --> Environment
 ```
 
 ## Quick Start
