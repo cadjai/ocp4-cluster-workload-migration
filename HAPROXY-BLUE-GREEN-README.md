@@ -36,35 +36,26 @@ graph TB
     end
     
     subgraph "Development Environment"
-
         subgraph "Blue Environment (Active)"
-
-        subgraph "Blue http_servers"
-            DB1[dev-blue-1<br/>10.0.1.10:80]
-            DB2[dev-blue-2<br/>10.0.1.11:80]
+            subgraph "Blue http_servers"
+                DB1[dev-blue-1<br/>10.0.1.10:80]
+                DB2[dev-blue-2<br/>10.0.1.11:80]
+            end
+            subgraph "Blue https_servers"
+                DB3[dev-blue-1<br/>10.0.1.10:443]
+                DB4[dev-blue-2<br/>10.0.1.11:443]
+            end
         end
-
-        subgraph "Blue https_servers"
-            DB3[dev-blue-1<br/>10.0.1.10:443]
-            DB4[dev-blue-2<br/>10.0.1.11:443]
-        end
-
-        end
-        
         subgraph "Green Environment (Standby)"
-
             subgraph "Green http_servers"
                 DG1[dev-green-1<br/>10.0.2.10:80]
                 DG2[dev-green-2<br/>10.0.2.11:80]
             end
-
             subgraph "Green https_servers"
                 DG3[dev-green-1<br/>10.0.2.10:443]
                 DG4[dev-green-2<br/>10.0.2.11:443]
             end
-
         end
-
     end
     
     subgraph "Production Environment"
