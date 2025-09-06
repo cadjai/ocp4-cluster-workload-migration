@@ -61,6 +61,7 @@ graph LR
 graph LR 
     subgraph "Production Environment"
         subgraph "Green Environment (Standby)"
+            direction TB
             subgraph "Green https_servers"
                 PG4[prod-green-1<br/>10.1.2.10:443]
                 PG5[prod-green-2<br/>10.1.2.11:443]
@@ -73,6 +74,7 @@ graph LR
             end
         end
         subgraph "Blue Environment (Active)"
+            direction TB
             subgraph "Blue https_servers"
             direction TB
                 PB4[prod-blue-1<br/>10.1.1.10:443]
