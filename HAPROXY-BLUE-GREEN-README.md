@@ -81,7 +81,7 @@ graph TB
     end
     
     subgraph "Internet/Users"
-        U1[User Request<br/>dev.example.com]
+        U1[User Request<br/>dev.example.com] --> H
         U2[User Request<br/>prod.example.com]
     end
 ```
