@@ -56,7 +56,7 @@ graph LR
 ```
 
 ```mermaid
-graph TD 
+graph TB 
     subgraph "Production Environment"
         subgraph "Green Environment (Standby)"
             subgraph "Green https_servers"
