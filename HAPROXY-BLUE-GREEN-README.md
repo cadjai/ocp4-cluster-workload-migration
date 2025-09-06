@@ -74,11 +74,13 @@ graph LR
         end
         subgraph "Blue Environment (Active)"
             subgraph "Blue https_servers"
+            direction LR
                 PB4[prod-blue-1<br/>10.1.1.10:443]
                 PB5[prod-blue-2<br/>10.1.1.11:443]
                 PB6[prod-blue-3<br/>10.1.1.12:443]
             end
             subgraph "Blue http_servers"
+            direction LR
                 PB1[prod-blue-1<br/>10.1.1.10:80]
                 PB2[prod-blue-2<br/>10.1.1.11:80]
                 PB3[prod-blue-3<br/>10.1.1.12:80]
@@ -88,6 +90,7 @@ graph LR
 
     subgraph "Development Environment"
         subgraph "Green Environment (Standby)"
+            direction LR
             subgraph "Green https_servers"
                 DG3[dev-green-1<br/>10.0.2.10:443]
                 DG4[dev-green-2<br/>10.0.2.11:443]
@@ -98,6 +101,7 @@ graph LR
             end
         end
         subgraph "Blue Environment (Active)"
+            direction LR
             subgraph "Blue https_servers"
                 DB3[dev-blue-1<br/>10.0.1.10:443]
                 DB4[dev-blue-2<br/>10.0.1.11:443]
