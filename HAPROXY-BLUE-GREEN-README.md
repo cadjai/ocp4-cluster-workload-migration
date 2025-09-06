@@ -41,7 +41,6 @@ graph TB
                 DB1[dev-blue-1<br/>10.0.1.10:80]
                 DB2[dev-blue-2<br/>10.0.1.11:80]
             end
-            
             subgraph "https_servers "
                 DB1[dev-blue-1<br/>10.0.1.10:443]
                 DB2[dev-blue-2<br/>10.0.1.11:443]
@@ -53,7 +52,6 @@ graph TB
                 DG1[dev-green-1<br/>10.0.2.10:80]
                 DG2[dev-green-2<br/>10.0.2.11:80]
             end
-            
             subgraph "https_servers"
                 DG1[dev-green-1<br/>10.0.2.10:443]
                 DG2[dev-green-2<br/>10.0.2.11:443]
