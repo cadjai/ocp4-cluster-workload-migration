@@ -41,10 +41,12 @@ graph TB
                 DB1[dev-blue-1<br/>10.0.1.10:80]
                 DB2[dev-blue-2<br/>10.0.1.11:80]
             end
-            subgraph "https_servers "
+
+            subgraph "https_servers"
                 DB1[dev-blue-1<br/>10.0.1.10:443]
                 DB2[dev-blue-2<br/>10.0.1.11:443]
             end
+
         end
         
         subgraph "Green Environment (Standby)"
