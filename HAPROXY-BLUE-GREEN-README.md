@@ -45,8 +45,8 @@ graph TB
         end
 
         subgraph "https_servers"
-            DB1[dev-blue-1<br/>10.0.1.10:443]
-            DB2[dev-blue-2<br/>10.0.1.11:443]
+            DB3[dev-blue-1<br/>10.0.1.10:443]
+            DB4[dev-blue-2<br/>10.0.1.11:443]
         end
 
         end
