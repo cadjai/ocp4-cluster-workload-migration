@@ -24,7 +24,7 @@ The HAProxy load balancer receives requests on standard HTTP/HTTPS ports (80/443
 ## Traffic Flow Diagram
 
 ```mermaid
-graph TD
+graph LR 
     subgraph "Production Environment"
         subgraph "Green Environment (Standby)"
             subgraph "Green https_servers"
