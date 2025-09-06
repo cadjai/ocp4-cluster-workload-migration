@@ -59,8 +59,8 @@ graph TB
             end
 
             subgraph "https_servers"
-                DG1[dev-green-1<br/>10.0.2.10:443]
-                DG2[dev-green-2<br/>10.0.2.11:443]
+                DG3[dev-green-1<br/>10.0.2.10:443]
+                DG4[dev-green-2<br/>10.0.2.11:443]
             end
 
         end
