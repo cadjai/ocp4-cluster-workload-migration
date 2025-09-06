@@ -25,7 +25,7 @@ The HAProxy load balancer receives requests on standard HTTP/HTTPS ports (80/443
 
 ```mermaid
 graph TB
-    subgraph "Internet/Users"  -->
+    subgraph "Internet/Users"
         U1[User Request<br/>dev.example.com]
         U2[User Request<br/>prod.example.com]
     end
