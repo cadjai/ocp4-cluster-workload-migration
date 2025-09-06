@@ -58,7 +58,7 @@ graph LR
 ## HAProxy Components Diagram (per environment)
 
 ```mermaid
-graph TB 
+graph TD 
     subgraph "Production Environment"
         subgraph "Green Environment (Standby)"
             subgraph "Green https_servers"
