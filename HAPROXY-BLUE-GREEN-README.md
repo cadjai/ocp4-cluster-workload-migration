@@ -59,28 +59,32 @@ graph TB
     end
     
     subgraph "Production Environment"
-        subgraph "Blue Environment http_servers (Active)"
-            PB1[prod-blue-1<br/>10.1.1.10:80]
-            PB2[prod-blue-2<br/>10.1.1.11:80]
-            PB3[prod-blue-3<br/>10.1.1.12:80]
+        subgraph "Blue Environment (Active)"
+            subgraph "Blue http_servers"
+                PB1[prod-blue-1<br/>10.1.1.10:80]
+                PB2[prod-blue-2<br/>10.1.1.11:80]
+                PB3[prod-blue-3<br/>10.1.1.12:80]
+            end
+            
+            subgraph "Blue https_servers"
+                PB4[prod-blue-1<br/>10.1.1.10:443]
+                PB5[prod-blue-2<br/>10.1.1.11:443]
+                PB6[prod-blue-3<br/>10.1.1.12:443]
+            end
         end
         
-        subgraph "Blue Environment https_servers (Active)"
-            PB1[prod-blue-1<br/>10.1.1.10:443]
-            PB2[prod-blue-2<br/>10.1.1.11:443]
-            PB3[prod-blue-3<br/>10.1.1.12:443]
-        end
-        
-        subgraph "Green Environment http_servers (Standby)"
-            PG1[prod-green-1<br/>10.1.2.10:80]
-            PG2[prod-green-2<br/>10.1.2.11:80]
-            PG3[prod-green-3<br/>10.1.2.12:80]
-        end
-        
-        subgraph "Green Environment https_servers (Standby)"
-            PG1[prod-green-1<br/>10.1.2.10:443]
-            PG2[prod-green-2<br/>10.1.2.11:443]
-            PG3[prod-green-3<br/>10.1.2.12:443]
+        subgraph "Green Environment (Standby)"
+            subgraph "Green http_servers"
+                PG1[prod-green-1<br/>10.1.2.10:80]
+                PG2[prod-green-2<br/>10.1.2.11:80]
+                PG3[prod-green-3<br/>10.1.2.12:80]
+            end
+            
+            subgraph "Green https_servers"
+                PG4[prod-green-1<br/>10.1.2.10:443]
+                PG5[prod-green-2<br/>10.1.2.11:443]
+                PG6[prod-green-3<br/>10.1.2.12:443]
+            end
         end
     end
 ```
