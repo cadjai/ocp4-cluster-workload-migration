@@ -10,3 +10,39 @@ metadata:
     velero.io/change-storage-class: RestoreItemAction
 spec:
   standard-csi: {{ oadp_restore_cs_name | default('gp3-csi', true) }}
+{% if (add_oadp_route_host_resource_modifier_cm is defined and add_oadp_route_host_resource_modifier_cm | bool) or (add_oadp_gp2_sc_resource_modifier_cm is defined and add_oadp_gp2_sc_resource_modifier_cm | bool) %}
+data:
+{% if add_oadp_route_host_resource_modifier_cm is defined and add_oadp_route_host_resource_modifier_cm | bool %}
+  route-resource-modifier.yaml: |+
+    ---
+    version: v1
+    resourceModifierRules:
+    - conditions:
+        groupResource: routes
+        resourceNameRegex: ".*"
+      patches:
+      - operation: test
+        path: "/spec/host"
+        value: ".apps.{{ backup_cluster_domain }}"
+      - operation: replace
+        path: "/spec/host"
+        value: ".apps.{{ restore_cluster_domain }}"
+{% endif %}
+{% if add_oadp_gp2_sc_resource_modifier_cm is defined and add_oadp_gp2_sc_resource_modifier_cm | bool %}
+  gp2-pvc-resource-modifier.yaml: |+
+    ---
+    version: v1
+    resourceModifierRules:
+    - conditions:
+        groupResource: persistentvolumeclaims
+        resourceNameRegex: ".*"
+      patches:
+      - operation: test
+        path: "/spec/storageClassName"
+        value: "gp2-csi"
+      - operation: replace
+        path: "/spec/storageClassName"
+        value: "gp3-csi"
+
+{% endif %}
+{% endif %}
