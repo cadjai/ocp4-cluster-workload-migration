@@ -1,0 +1,230 @@
+<mxfile host="app.diagrams.net" agent="Cursor" version="28.2.5" type="device">
+  <diagram id="ocp-aws-network" name="OpenShift on AWS — Multi-Cluster Network Traffic">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="OpenShift on AWS — Multi-Cluster Network Traffic" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;fontColor=#1a1a1a;" vertex="1" parent="1">
+          <mxGeometry x="320" y="20" width="960" height="36" as="geometry" />
+        </mxCell>
+
+        <!-- Users -->
+        <mxCell id="Users" value="Internet / Users" style="ellipse;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="700" y="70" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== GLOBAL LAYER ==================== -->
+        <mxCell id="GLOBAL" value="Global Layer" style="swimlane;horizontal=1;startSize=28;fillColor=#e8f4fd;strokeColor=#0066cc;strokeWidth=2;fontStyle=1;fontSize=13;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="380" y="170" width="800" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ONPREM_DNS" value="On-Premise DNS Provider&#xa;Resolves app hostnames&#xa;to live cluster Global ELB" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde8e8;strokeColor=#cc0000;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="GLOBAL">
+          <mxGeometry x="80" y="50" width="240" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="GELB" value="Global ELB (ALB)&#xa;Routes production traffic&#xa;to LIVE cluster only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8f4fd;strokeColor=#0066cc;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="GLOBAL">
+          <mxGeometry x="480" y="50" width="240" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- DNS -> Global ELB -->
+        <mxCell id="e_dns_gelb" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0066cc;strokeWidth=1.5;endArrow=classic;" edge="1" parent="GLOBAL" source="ONPREM_DNS" target="GELB">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Users -> DNS -->
+        <mxCell id="e_users_dns" value="DNS query" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#666666;strokeWidth=1;endArrow=classic;fontSize=10;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Users" target="ONPREM_DNS">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="540" y="100" />
+              <mxPoint x="540" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Users => Global ELB (HTTPS) -->
+        <mxCell id="e_users_gelb" value="HTTPS (resolved via on-prem DNS)" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#0066cc;strokeWidth=2.5;endArrow=classic;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="Users" target="GELB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="100" />
+              <mxPoint x="1000" y="100" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== CLUSTER A VPC — LIVE ==================== -->
+        <mxCell id="VPC_A" value="Cluster A VPC — LIVE" style="swimlane;horizontal=1;startSize=30;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontStyle=1;fontSize=14;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="420" width="740" height="700" as="geometry" />
+        </mxCell>
+
+        <!-- Public Subnets A -->
+        <mxCell id="PUB_A" value="Public Subnets — 3 AZs" style="swimlane;horizontal=1;startSize=26;fillColor=#fff3cd;strokeColor=#ffc107;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="VPC_A">
+          <mxGeometry x="30" y="50" width="680" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="DELB_A" value="Dedicated ELB&#xa;(NLB/ALB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="PUB_A">
+          <mxGeometry x="220" y="40" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Private Subnets A -->
+        <mxCell id="PRIV_A" value="Private Subnets — 3 AZs" style="swimlane;horizontal=1;startSize=26;fillColor=#f0f0f0;strokeColor=#6c757d;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="VPC_A">
+          <mxGeometry x="30" y="200" width="680" height="460" as="geometry" />
+        </mxCell>
+
+        <!-- Control Plane A -->
+        <mxCell id="CP_A" value="Control Plane" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
+          <mxGeometry x="20" y="40" width="640" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_A1" value="CP-1&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_A">
+          <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_A2" value="CP-2&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_A">
+          <mxGeometry x="240" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_A3" value="CP-3&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_A">
+          <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- ODF Storage A -->
+        <mxCell id="ODF_A" value="ODF Storage" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
+          <mxGeometry x="20" y="170" width="640" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_A1" value="ODF-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_A">
+          <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_A2" value="ODF-2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_A">
+          <mxGeometry x="240" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_A3" value="ODF-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_A">
+          <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Infra A -->
+        <mxCell id="INF_A" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
+          <mxGeometry x="20" y="300" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- DELB_A -> INF_A -->
+        <mxCell id="e_delb_a_inf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#28a745;strokeWidth=2;endArrow=classic;" edge="1" parent="VPC_A" source="DELB_A" target="INF_A">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== CLUSTER B VPC — STANDBY ==================== -->
+        <mxCell id="VPC_B" value="Cluster B VPC — STANDBY" style="swimlane;horizontal=1;startSize=30;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontStyle=1;fontSize=14;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="820" y="420" width="740" height="700" as="geometry" />
+        </mxCell>
+
+        <!-- Public Subnets B -->
+        <mxCell id="PUB_B" value="Public Subnets — 3 AZs" style="swimlane;horizontal=1;startSize=26;fillColor=#fff3cd;strokeColor=#ffc107;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="VPC_B">
+          <mxGeometry x="30" y="50" width="680" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="DELB_B" value="Dedicated ELB&#xa;(NLB/ALB)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="PUB_B">
+          <mxGeometry x="220" y="40" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Private Subnets B -->
+        <mxCell id="PRIV_B" value="Private Subnets — 3 AZs" style="swimlane;horizontal=1;startSize=26;fillColor=#f0f0f0;strokeColor=#6c757d;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="VPC_B">
+          <mxGeometry x="30" y="200" width="680" height="460" as="geometry" />
+        </mxCell>
+
+        <!-- Control Plane B -->
+        <mxCell id="CP_B" value="Control Plane" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
+          <mxGeometry x="20" y="40" width="640" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_B1" value="CP-1&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_B">
+          <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_B2" value="CP-2&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_B">
+          <mxGeometry x="240" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="CP_B3" value="CP-3&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_B">
+          <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- ODF Storage B -->
+        <mxCell id="ODF_B" value="ODF Storage" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
+          <mxGeometry x="20" y="170" width="640" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_B1" value="ODF-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_B">
+          <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_B2" value="ODF-2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_B">
+          <mxGeometry x="240" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="ODF_B3" value="ODF-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_B">
+          <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Infra B -->
+        <mxCell id="INF_B" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
+          <mxGeometry x="20" y="300" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- DELB_B -> INF_B -->
+        <mxCell id="e_delb_b_inf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#adb5bd;strokeWidth=1.5;endArrow=classic;" edge="1" parent="VPC_B" source="DELB_B" target="INF_B">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ==================== CROSS-LAYER EDGES ==================== -->
+
+        <!-- Global ELB => Dedicated ELB A (live production) -->
+        <mxCell id="e_gelb_delb_a" value="Path 1: HTTPS live production traffic" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#28a745;strokeWidth=2.5;endArrow=classic;fontSize=11;fontStyle=1;fontColor=#155724;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="GELB" target="DELB_A">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="390" />
+              <mxPoint x="410" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Global ELB -.-> Dedicated ELB B (health checks) -->
+        <mxCell id="e_gelb_delb_b" value="Health checks / failover" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#6c757d;strokeWidth=1.5;dashed=1;dashPattern=8 8;endArrow=classic;fontSize=11;fontColor=#6c757d;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="GELB" target="DELB_B">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="980" y="390" />
+              <mxPoint x="1190" y="390" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Legend" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#666666;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="300" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_live" value="LIVE path / Cluster A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="legend">
+          <mxGeometry x="16" y="36" width="268" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_standby" value="STANDBY / Cluster B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="legend">
+          <mxGeometry x="16" y="72" width="268" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_dns" value="On-Prem DNS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fde8e8;strokeColor=#cc0000;strokeWidth=2;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="legend">
+          <mxGeometry x="16" y="108" width="268" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="leg_public" value="Public Subnets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3cd;strokeColor=#ffc107;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="legend">
+          <mxGeometry x="16" y="144" width="268" height="28" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
