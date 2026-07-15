@@ -1,0 +1,136 @@
+flowchart TB
+    subgraph ENT["Enterprise-Provided Resources (outside AWS)"]
+        direction LR
+        GIT["Code Repository<br/>GitHub / GitLab / Bitbucket"]
+        REG["External Container Registry<br/>Quay.io / Harbor / ECR"]
+        IDM["Identity Management<br/>LDAP / AD / Okta / RH-SSO"]
+        DNS["DNS Provider<br/>Route 53 / Infoblox / BIND"]
+        CICD["CI/CD Pipeline<br/>Jenkins / Tekton / Argo CD"]
+        PKI["Certificate Authority<br/>Enterprise PKI / ACME"]
+    end
+
+    subgraph AWS["Amazon Web Services (AWS) — Customer VPC (IPI)"]
+        direction TB
+
+        subgraph VPC["Virtual Private Cloud — 3 Availability Zones (us-east-1a / 1b / 1c)"]
+            direction TB
+
+            subgraph PUB["Public Subnets (per AZ)"]
+                direction LR
+                IGW["Internet Gateway"]
+                ELB["External ELB (ALB/NLB)<br/>Ingress + API endpoints"]
+                NAT1["NAT Gateway — AZ-a"]
+                NAT2["NAT Gateway — AZ-b"]
+                NAT3["NAT Gateway — AZ-c"]
+            end
+
+            subgraph PRIV["Private Subnets (per AZ) — EC2 Instances"]
+                direction TB
+
+                subgraph OCP["OpenShift Container Platform Cluster"]
+                    direction TB
+
+                    subgraph OPS["Cluster Operators (cluster-wide)"]
+                        direction TB
+                        OP_LIST["Cluster Version Operator · Machine Config Operator · Ingress Operator<br/>DNS Operator · Storage Operator · Authentication Operator<br/>Console Operator · Monitoring Operator · Network Operator · Image Registry Operator"]
+                    end
+
+                    subgraph CP["Control Plane Nodes (3) — node-role.kubernetes.io/master"]
+                        direction LR
+                        subgraph CP0["master-0 (AZ-a)"]
+                            CP0P["etcd · kube-apiserver · kube-scheduler<br/>kube-ctrl-mgr · oc-apiserver · oc-oauth"]
+                        end
+                        subgraph CP1["master-1 (AZ-b)"]
+                            CP1P["etcd · kube-apiserver · kube-scheduler<br/>kube-ctrl-mgr · oc-apiserver · oc-oauth"]
+                        end
+                        subgraph CP2["master-2 (AZ-c)"]
+                            CP2P["etcd · kube-apiserver · kube-scheduler<br/>kube-ctrl-mgr · oc-apiserver · oc-oauth"]
+                        end
+                    end
+
+                    subgraph INFRA["Infrastructure Nodes (3) — node-role.kubernetes.io/infra"]
+                        direction LR
+                        subgraph INF0["infra-0 (AZ-a)"]
+                            INF0P["router · loki-vector · prometheus<br/>alertmanager · image-registry · cluster-dns"]
+                        end
+                        subgraph INF1["infra-1 (AZ-b)"]
+                            INF1P["router · loki-vector · prometheus<br/>alertmanager · image-registry · cluster-dns"]
+                        end
+                        subgraph INF2["infra-2 (AZ-c)"]
+                            INF2P["router · loki-vector · prometheus<br/>alertmanager · image-registry · cluster-dns"]
+                        end
+                    end
+
+                    subgraph ODF["ODF Storage Nodes (3) — node-role.kubernetes.io/storage"]
+                        direction LR
+                        subgraph ODF0["odf-0 (AZ-a)"]
+                            ODF0P["rook-ceph-osd · rook-ceph-mon · ocs-operator<br/>noobaa-core · ceph-mgr · metrics-exp"]
+                        end
+                        subgraph ODF1["odf-1 (AZ-b)"]
+                            ODF1P["rook-ceph-osd · rook-ceph-mon · ocs-operator<br/>noobaa-core · ceph-mgr · metrics-exp"]
+                        end
+                        subgraph ODF2["odf-2 (AZ-c)"]
+                            ODF2P["rook-ceph-osd · rook-ceph-mon · ocs-operator<br/>noobaa-core · ceph-mgr · metrics-exp"]
+                        end
+                    end
+
+                    subgraph COMPUTE["Compute / Worker Nodes (3) — node-role.kubernetes.io/worker"]
+                        direction LR
+                        subgraph WK0["worker-0 (AZ-a)"]
+                            WK0P["sample-app · sample-app · nginx-sidecar"]
+                        end
+                        subgraph WK1["worker-1 (AZ-b)"]
+                            WK1P["sample-app · sample-app · nginx-sidecar"]
+                        end
+                        subgraph WK2["worker-2 (AZ-c)"]
+                            WK2P["sample-app · sample-app · nginx-sidecar"]
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    %% Enterprise integrations (dashed = external)
+    GIT -. "git push / webhooks" .-> CICD
+    CICD -. "build / deploy" .-> OCP
+    REG -. "image pull (via NAT)" .-> NAT1
+    REG -. "image pull (via NAT)" .-> NAT2
+    REG -. "image pull (via NAT)" .-> NAT3
+    IDM -. "OAuth / LDAP bind" .-> CP0P
+    DNS -. "DNS records (*.apps, api)" .-> ELB
+    PKI -. "TLS certificates" .-> ELB
+
+    %% In-cluster traffic paths
+    IGW --> ELB
+    ELB -->|"HTTPS ingress"| INF0P
+    ELB -->|"HTTPS ingress"| INF1P
+    ELB -->|"HTTPS ingress"| INF2P
+    INF0P -->|"Service route"| WK0P
+    INF1P -->|"Service route"| WK1P
+    INF2P -->|"Service route"| WK2P
+    CP0P -. "API / scheduling" .-> WK0P
+    CP1P -. "API / scheduling" .-> WK1P
+    CP2P -. "API / scheduling" .-> WK2P
+    WK0P -. "PVC / S3" .-> ODF0P
+    WK1P -. "PVC / S3" .-> ODF1P
+    WK2P -. "PVC / S3" .-> ODF2P
+    NAT1 --> PRIV
+    NAT2 --> PRIV
+    NAT3 --> PRIV
+
+    classDef enterprise fill:#f5f5f5,stroke:#666,stroke-width:2px
+    classDef aws fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef ocp fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,stroke-dasharray:5 5
+    classDef cp fill:#ede7f6,stroke:#5e35b1,stroke-width:1px
+    classDef infra fill:#e8eaf6,stroke:#3949ab,stroke-width:1px
+    classDef odf fill:#e8f5e9,stroke:#2e7d32,stroke-width:1px
+    classDef worker fill:#e0f7fa,stroke:#00838f,stroke-width:1px
+
+    class ENT,GIT,REG,IDM,DNS,CICD,PKI enterprise
+    class AWS,VPC,PUB,PRIV aws
+    class OCP,OPS ocp
+    class CP,CP0,CP1,CP2,CP0P,CP1P,CP2P cp
+    class INFRA,INF0,INF1,INF2,INF0P,INF1P,INF2P infra
+    class ODF,ODF0,ODF1,ODF2,ODF0P,ODF1P,ODF2P odf
+    class COMPUTE,WK0,WK1,WK2,WK0P,WK1P,WK2P worker
