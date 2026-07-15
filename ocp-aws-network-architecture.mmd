@@ -1,0 +1,148 @@
+---
+title: OpenShift on AWS — Multi-Cluster Network Traffic
+config:
+  theme: default
+  flowchart:
+    htmlLabels: true
+    curve: basis
+---
+
+flowchart TB
+    Users(["Internet / Users"])
+
+    subgraph GLOBAL["Global Layer"]
+        direction TB
+        R53["Route 53 / Global Accelerator"]
+        GELB["Global ELB (ALB)<br/>Routes production traffic<br/>to LIVE cluster only"]
+        R53 --> GELB
+    end
+
+    Users --> R53
+
+    subgraph VPC_A["Cluster A VPC — LIVE"]
+        direction TB
+
+        IGW_A["Internet Gateway"]
+
+        subgraph PUB_A["Public Subnets — 3 AZs"]
+            direction LR
+            NAT_A["NAT Gateways ×3"]
+            DELB_A["Dedicated ELB<br/>(NLB/ALB)"]
+            SELB_A["Sharded Ingress ELB<br/>(live global target)"]
+        end
+
+        subgraph PRIV_A["Private Subnets — 3 AZs"]
+            direction TB
+
+            subgraph CP_A["Control Plane"]
+                direction LR
+                CP_A1["CP-1<br/>master"]
+                CP_A2["CP-2<br/>master"]
+                CP_A3["CP-3<br/>master"]
+            end
+
+            subgraph ODF_A["ODF Storage"]
+                direction LR
+                ODF_A1["ODF-1"]
+                ODF_A2["ODF-2"]
+                ODF_A3["ODF-3"]
+            end
+
+            subgraph INF_DEF_A["Infra — Default IngressController"]
+                direction LR
+                ID_A1["INF-D-1<br/>default IC"]
+                ID_A2["INF-D-2<br/>default IC"]
+                ID_A3["INF-D-3<br/>default IC"]
+            end
+
+            subgraph INF_SH_A["Infra — Sharded IngressController"]
+                direction LR
+                IS_A1["INF-S-1<br/>sharded IC"]
+                IS_A2["INF-S-2<br/>sharded IC"]
+                IS_A3["INF-S-3<br/>sharded IC"]
+            end
+        end
+
+        IGW_A --> PUB_A
+        DELB_A --> INF_DEF_A
+        SELB_A --> INF_SH_A
+    end
+
+    subgraph VPC_B["Cluster B VPC — STANDBY"]
+        direction TB
+
+        IGW_B["Internet Gateway"]
+
+        subgraph PUB_B["Public Subnets — 3 AZs"]
+            direction LR
+            NAT_B["NAT Gateways ×3"]
+            DELB_B["Dedicated ELB<br/>(NLB/ALB)"]
+            SELB_B["Sharded Ingress ELB<br/>(standby — no global traffic)"]
+        end
+
+        subgraph PRIV_B["Private Subnets — 3 AZs"]
+            direction TB
+
+            subgraph CP_B["Control Plane"]
+                direction LR
+                CP_B1["CP-1<br/>master"]
+                CP_B2["CP-2<br/>master"]
+                CP_B3["CP-3<br/>master"]
+            end
+
+            subgraph ODF_B["ODF Storage"]
+                direction LR
+                ODF_B1["ODF-1"]
+                ODF_B2["ODF-2"]
+                ODF_B3["ODF-3"]
+            end
+
+            subgraph INF_DEF_B["Infra — Default IngressController"]
+                direction LR
+                ID_B1["INF-D-1<br/>default IC"]
+                ID_B2["INF-D-2<br/>default IC"]
+                ID_B3["INF-D-3<br/>default IC"]
+            end
+
+            subgraph INF_SH_B["Infra — Sharded IngressController"]
+                direction LR
+                IS_B1["INF-S-1<br/>sharded IC"]
+                IS_B2["INF-S-2<br/>sharded IC"]
+                IS_B3["INF-S-3<br/>sharded IC"]
+            end
+        end
+
+        IGW_B --> PUB_B
+        DELB_B --> INF_DEF_B
+        SELB_B --> INF_SH_B
+    end
+
+    %% Global live traffic
+    GELB ==>|"Path 1: HTTPS live production traffic"| SELB_A
+    SELB_A ==> INF_SH_A
+
+    %% Health checks / failover
+    GELB -.->|"Health checks / failover"| SELB_B
+
+    %% Dedicated ELB paths (cluster-local ingress)
+    Users -.->|"Path 2: optional direct access"| DELB_A
+    Users -.->|"Path 2: optional direct access"| DELB_B
+    DELB_A -.-> INF_DEF_A
+    DELB_B -.-> INF_DEF_B
+
+    %% Outbound from private nodes
+    PRIV_A -.->|"Outbound via NAT"| NAT_A
+    PRIV_B -.->|"Outbound via NAT"| NAT_B
+
+    %% Styling
+    classDef live fill:#d4edda,stroke:#28a745,stroke-width:2px
+    classDef standby fill:#f8f9fa,stroke:#adb5bd,stroke-width:1px
+    classDef global fill:#e8f4fd,stroke:#0066cc,stroke-width:2px
+    classDef public fill:#fff3cd,stroke:#ffc107,stroke-width:1px
+    classDef private fill:#f0f0f0,stroke:#6c757d,stroke-width:1px
+
+    class GELB,R53 global
+    class SELB_A,INF_SH_A,IS_A1,IS_A2,IS_A3 live
+    class SELB_B,INF_SH_B,IS_B1,IS_B2,IS_B3 standby
+    class PUB_A,PUB_B public
+    class PRIV_A,PRIV_B private
