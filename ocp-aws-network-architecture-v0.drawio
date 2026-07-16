@@ -72,23 +72,9 @@
           <mxGeometry x="30" y="200" width="680" height="460" as="geometry" />
         </mxCell>
 
-        <!-- Infra A -->
-        <mxCell id="INF_A" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
-          <mxGeometry x="20" y="40" width="640" height="130" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_A1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
-          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_A2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
-          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_A3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
-          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-
         <!-- Control Plane A -->
         <mxCell id="CP_A" value="Control Plane" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
-          <mxGeometry x="20" y="190" width="640" height="110" as="geometry" />
+          <mxGeometry x="20" y="40" width="640" height="110" as="geometry" />
         </mxCell>
         <mxCell id="CP_A1" value="CP-1&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_A">
           <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
@@ -102,7 +88,7 @@
 
         <!-- ODF Storage A -->
         <mxCell id="ODF_A" value="ODF Storage" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
-          <mxGeometry x="20" y="320" width="640" height="110" as="geometry" />
+          <mxGeometry x="20" y="170" width="640" height="110" as="geometry" />
         </mxCell>
         <mxCell id="ODF_A1" value="ODF-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_A">
           <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
@@ -112,6 +98,20 @@
         </mxCell>
         <mxCell id="ODF_A3" value="ODF-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_A">
           <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Infra A -->
+        <mxCell id="INF_A" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_A">
+          <mxGeometry x="20" y="300" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_A3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;strokeWidth=2;fontSize=11;align=center;" vertex="1" parent="INF_A">
+          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
         </mxCell>
 
         <!-- DELB_A -> INF_A -->
@@ -138,23 +138,9 @@
           <mxGeometry x="30" y="200" width="680" height="460" as="geometry" />
         </mxCell>
 
-        <!-- Infra B -->
-        <mxCell id="INF_B" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
-          <mxGeometry x="20" y="40" width="640" height="130" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_B1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
-          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_B2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
-          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="INF_B3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
-          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
-        </mxCell>
-
         <!-- Control Plane B -->
         <mxCell id="CP_B" value="Control Plane" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
-          <mxGeometry x="20" y="190" width="640" height="110" as="geometry" />
+          <mxGeometry x="20" y="40" width="640" height="110" as="geometry" />
         </mxCell>
         <mxCell id="CP_B1" value="CP-1&#xa;master" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="CP_B">
           <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
@@ -168,7 +154,7 @@
 
         <!-- ODF Storage B -->
         <mxCell id="ODF_B" value="ODF Storage" style="swimlane;horizontal=1;startSize=24;fillColor=#ffffff;strokeColor=#6c757d;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
-          <mxGeometry x="20" y="320" width="640" height="110" as="geometry" />
+          <mxGeometry x="20" y="170" width="640" height="110" as="geometry" />
         </mxCell>
         <mxCell id="ODF_B1" value="ODF-1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_B">
           <mxGeometry x="40" y="36" width="160" height="56" as="geometry" />
@@ -178,6 +164,20 @@
         </mxCell>
         <mxCell id="ODF_B3" value="ODF-3" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c757d;fontSize=11;align=center;" vertex="1" parent="ODF_B">
           <mxGeometry x="440" y="36" width="160" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Infra B -->
+        <mxCell id="INF_B" value="Infra — Default IngressController" style="swimlane;horizontal=1;startSize=24;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontStyle=1;fontSize=11;rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="PRIV_B">
+          <mxGeometry x="20" y="300" width="640" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B1" value="INF-1&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="40" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B2" value="INF-2&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="240" y="40" width="160" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="INF_B3" value="INF-3&#xa;default IC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#adb5bd;strokeWidth=1;fontSize=11;align=center;" vertex="1" parent="INF_B">
+          <mxGeometry x="440" y="40" width="160" height="60" as="geometry" />
         </mxCell>
 
         <!-- DELB_B -> INF_B -->
