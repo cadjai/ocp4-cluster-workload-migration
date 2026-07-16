@@ -12,9 +12,9 @@ Under the new Blue-Green approach, every cluster will use three domain pairs to 
 
 api.cluster.domain / apps.cluster.domain (Live Routing)
 
-api.clusterb.domain / apps.clusterb.domain (Blue Cluster)
+api.clustera.domain / apps.clustera.domain (Green Cluster)
 
-api.clusterg.domain / apps.clusterg.domain (Green Cluster)
+api.clusterb.domain / apps.clusterb.domain (Blue Cluster)
 
 While the Blue and Green pairs will target their respective physical clusters, the Live pair will target a routing AWS Elastic Load Balancer (ELB) that dynamically directs production traffic to the active environment.
 
@@ -38,9 +38,9 @@ Therefore going forward, every cluster deployment will leverage three DNS record
 
 Live Routing Pair: api.cluster.domain and apps.cluster.domain
 
-Active (Green) Pair: api.clusterb.domain and apps.clusterg.domain
+Active (Green) Pair: api.clustera.domain and apps.clustera.domain
 
-Standby (Blue) Pair: api.clusterg.domain and apps.clusterb.domain
+Standby (Blue) Pair: api.clusterb.domain and apps.clusterb.domain
 
 **How Traffic Flow Works:**
 Each environment pair (Blue and Green) will host an independent cluster associated with its own AWS Elastic Load Balancer (ELB). The live DNS records will point to a primary "routing" ELB. This routing ELB will not host a cluster itself; instead, it will dynamically direct incoming traffic to whichever cluster is designated as active (hot), keeping the other on standby (warm) for instant failover or upgrades.
