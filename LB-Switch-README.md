@@ -27,7 +27,7 @@ While the Blue and Green pairs will target their respective physical clusters, t
 Currently, each OpenShift cluster is deployed with its own set of dedicated AWS Elastic Load Balancers (ELBs) that directly handle traffic for the cluster's specific domains (api.cluster.domain and apps.cluster.domain).
 
 ### The Blue-Green Design:
-Transitioning this model to a Blue-Green architecture means a single logical cluster environment will now have two distinct sets of dedicated ELBs—one for the Active (Blue) cluster and one for the Standby (Green) cluster.
+Transitioning this model to a Blue-Green architecture means a single logical cluster environment will now have two distinct sets of dedicated ELBs—one for the Active (Green) cluster and one for the Standby (Blue) cluster.
 
 ### Introducing the Routing Layer:
 To ensure this backend transition is completely transparent to end users and application consumers, we are introducing a primary routing ELB. This routing ELB will manage traffic for all external-facing routes, while the underlying dedicated ELBs will continue to manage traffic bound specifically for their respective physical clusters.
@@ -38,9 +38,9 @@ Therefore going forward, every cluster deployment will leverage three DNS record
 
 Live Routing Pair: api.cluster.domain and apps.cluster.domain
 
-Active (Blue) Pair: api.clusterb.domain and apps.clusterb.domain
+Active (Green) Pair: api.clusterb.domain and apps.clusterg.domain
 
-Standby (Green) Pair: api.clusterg.domain and apps.clusterg.domain
+Standby (Blue) Pair: api.clusterg.domain and apps.clusterb.domain
 
 **How Traffic Flow Works:**
 Each environment pair (Blue and Green) will host an independent cluster associated with its own AWS Elastic Load Balancer (ELB). The live DNS records will point to a primary "routing" ELB. This routing ELB will not host a cluster itself; instead, it will dynamically direct incoming traffic to whichever cluster is designated as active (hot), keeping the other on standby (warm) for instant failover or upgrades.
