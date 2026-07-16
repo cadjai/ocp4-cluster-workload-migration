@@ -1,0 +1,68 @@
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: duplicate-and-mutate-route-host
+spec:
+  generateExisting: true
+  skipBackgroundRequests: false
+  rules:
+    - name: duplicate-and-mutate-live-route
+      context:
+        - name: domainConfig
+          configMap:
+            name: cluster-domain-config
+            namespace: kyverno
+      match:
+        any:
+          - resources:
+              kinds:
+                - route.openshift.io/v1/Route
+      exclude:
+        any:
+          - resources:
+              names:
+                - "*-live"
+      generate:
+        apiVersion: route.openshift.io/v1
+        kind: Route
+        name: &routeName "{{ '{{' }} request.object.metadata.name || target.metadata.name }}-live"
+        namespace: "{{ '{{' }} request.object.metadata.namespace || target.metadata.namespace }}"
+        synchronize: false
+        data:
+          metadata:
+            labels: "{{ '{{' }} request.object.metadata.labels || target.metadata.labels || '{}' }}"
+          spec:
+            host: "{{ '{{' }} request.object.metadata.name || target.metadata.name }}.{{ '{{' }} domainConfig.data.domain }}"
+            to:
+              kind: "{{ '{{' }} request.object.spec.to.kind || target.spec.to.kind }}"
+              name: "{{ '{{' }} request.object.spec.to.name || target.spec.to.name }}"
+              weight: "{{ '{{' }} request.object.spec.to.weight || target.spec.to.weight }}"
+            port:
+              targetPort: "{{ '{{' }} request.object.spec.port.targetPort || target.spec.port.targetPort }}"
+            tls: "{{ '{{' }} request.object.spec.tls || target.spec.tls || 'null' }}"
+
+{% if domain_config_shard is defined and domain_config_shard | length > 0 %}
+    - name: append-shard-label-to-live-route
+      match:
+        any:
+          - resources:
+              kinds:
+                - route.openshift.io/v1/Route
+              names:
+                - "*-live"
+      context:
+        - name: domainConfig
+          configMap:
+            name: cluster-domain-config
+            namespace: kyverno
+      mutate:
+        targets:
+          - apiVersion: route.openshift.io/v1
+            kind: Route
+            name: *routeName
+        patchStrategicMerge:
+          metadata:
+            labels:
+              shard: "{{ '{{' }} domainConfig.data.shard || 'live' }}"
+{% endif %}

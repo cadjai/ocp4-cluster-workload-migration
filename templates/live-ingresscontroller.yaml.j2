@@ -1,0 +1,29 @@
+apiVersion: operator.openshift.io/v1
+kind: IngressController
+metadata:
+  name: {{ live_router_name }}
+  namespace: openshift-ingress-operator
+spec:
+  domain: {{ live_cluster_domain }}
+  endpointPublishingStrategy:
+     type: HostNetwork
+  defaultCertificate:
+    name: {{ ingress_cert_secret_name }}
+{% if create_router_infra_instances is defined and create_router_infra_instances | bool %}
+  nodePlacement:
+    nodeSelector:
+      matchLabels:
+        node-role.kubernetes.io/{{ node_role }}: ''
+    tolerations:
+    - effect: NoSchedule
+      key: {{ infra_taint_key | default('infra', true) }}
+      value: {{ infra_taint_value | default('reserved', true) }}
+    - effect: NoExecute
+      key: {{ infra_taint_key | default('infra', true) }}
+      value: {{ infra_taint_value | default('reserved', true) }}
+{% endif %}
+  replicas: {{ live_router_instances | default('2', true) }}
+  routeSelector:
+    matchLabels:
+      shard: {{ live_router_name }}
+

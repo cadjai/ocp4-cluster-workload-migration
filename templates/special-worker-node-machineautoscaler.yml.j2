@@ -1,0 +1,12 @@
+apiVersion: "autoscaling.openshift.io/v1beta1"
+kind: "MachineAutoscaler"
+metadata:
+  name: "{{ machineset_name }}"
+  namespace: "openshift-machine-api"
+spec:
+  minReplicas: {{ machine_autoscaler_replica_min | default('0', false) }}
+  maxReplicas: {{ machine_autoscaler_replica_max | default('1', false) }}
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: {{ machineset_name }}

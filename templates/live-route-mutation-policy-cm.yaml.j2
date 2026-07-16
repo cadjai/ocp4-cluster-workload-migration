@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-domain-config
+  namespace: kyverno
+data:
+  domain: "{{ live_cluster_domain }}"
+{% if configure_live_sharded_router is defined and create_router_infra_instances | bool and create_router_infra_instances is defined and create_router_infra_instances | bool %}
+  shard: "{{ live_router_name }}"
+{% endif %}

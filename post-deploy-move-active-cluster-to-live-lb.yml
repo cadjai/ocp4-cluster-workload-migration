@@ -1,0 +1,411 @@
+---
+- name: 'Switch active cluster to live LB | post-deploy-move-active-cluster-to-live-lb.yml'
+  hosts: localhost
+  gather_facts: false
+
+  vars_files:
+    - '../vars/vault.yml'
+    - '../vars/bastion.yml'
+    - '../vars/cluster.yml'
+    - '../vars/fabric.yml'
+
+  vars:
+    module: "Add CPMS, Infra MachineSets, and AWS Instances to Live LB"
+    ansible_name_module: " Post Cluster Installation | Deploy Operators | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} whoami | check if there is valid session'
+      ansible.builtin.command: >
+        {{ openshift_cli }} whoami
+      ignore_errors: yes
+      register: existing_session
+
+    - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
+      ansible.builtin.import_tasks: ../roles/ocp-cluster-login/tasks/main.yml
+      when:
+        - existing_session.rc > 0
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # Deregister existing instances from live https and https TG if applicable
+    # --------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Deregister existing instances from live TG if applicable'
+      when:
+        - deregister_old_instances is defined
+        - deregister_old_instances | bool
+      block:
+        - name: '{{ ansible_name_module }} | Retrieve atached live httpsinstances '
+          ansible.builtin.shell: >
+            {{ aws_cli }} elbv2 describe-target-health  --target-group-arn {{ live_ingress_lb_https_tg_arn }} --query 'TargetHealthDescriptions[].Target.Id'
+          ignore_errors: true
+          register: live_https_instances_output
+
+        - name: '{{ ansible_name_module }} | Deregister existing instances from https TG'
+          ansible.builtin.shell: >
+            {{ aws_cli }} elbv2 deregister-targets \
+              --target-group-arn {{ live_ingress_lb_https_tg_arn }} \
+              --targets Id={{ item }}
+          loop: "{{ live_https_instances_output.stdout | from_json }}"
+          when:
+            - live_https_instances_output is defined
+            - live_https_instances_output.rc is defined
+            - live_https_instances_output.rc == 0
+            - live_https_instances_output.stdout is defined
+            - live_https_instances_output.stdout | length > 0
+          register: live_https_targets_deregistered
+
+        - name: '{{ ansible_name_module }} | Retrieve atached live httpsinstances '
+          ansible.builtin.shell: >
+            {{ aws_cli }} elbv2 describe-target-health  --target-group-arn {{ live_ingress_lb_http_tg_arn }} --query 'TargetHealthDescriptions[].Target.Id'  --output json
+          ignore_errors: true
+          register: live_http_instances_output
+
+        - name: '{{ ansible_name_module }} | Deregister existing instances from http TG'
+          ansible.builtin.shell: >
+            {{ aws_cli }} elbv2 deregister-targets \
+              --target-group-arn {{ live_ingress_lb_http_tg_arn }} \
+              --targets Id={{ item }}
+          loop: "{{ live_http_instances_output.stdout | from_json }}"
+          when:
+            - live_http_instances_output is defined
+            - live_http_instances_output.rc is defined
+            - live_http_instances_output.rc == 0
+            - live_http_instances_output.stdout is defined
+            - live_http_instances_output.stdout | length > 0
+          register: live_http_targets_deregistered
+
+    # -------------------------------------------------------------------------
+    # Create Ec2 instances to host the live routers if applicable
+    # --------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Create dedicate infra instaces for live router if applicable'
+      when:
+        - create_router_infra_instances is defined
+        - create_router_infra_instances | bool
+      block:
+        - name: '{{ ansible_name_module }} | include_tasks | Import dedicated instance provisioning tasks'
+          ansible.builtin.include_tasks: tasks/provision-ec2-instances.yml
+
+    # -------------------------------------------------------------------------
+    # Add sharded router to handle live domain
+    # For this no need to create a new secret given that we already have the
+    #  cert for all domain included in the same
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | configure sharded router '
+      when:
+        - configure_live_sharded_router is defined
+        - configure_live_sharded_router | bool
+      block:
+        - name: '{{ ansible_name_module }} | set_fact | ingress_cert_secret_name '
+          ansible.builtin.set_fact:
+            ingress_cert_secret_name: "ingress-secret"
+          when:
+            - not ingress_cert_secret_name is defined or ingress_cert_secret_name == ""
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | retrieve custom tls secret'
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get secret {{ ingress_cert_secret_name }} -n openshift-ingress --no-headers | awk '{print $1}'
+          register: router_secret
+
+        - name: '{{ ansible_name_module }} | ansible.builtin.assert | Ensure the custon router cert secret exist '
+          ansible.builtin.assert:
+            that:
+              - router_secret is defined
+              - router_secret.stdout is defined
+              - router_secret.stdout != ""
+              - ingress_cert_secret_name in router_secret.stdout
+            msg: " the custom pki cert needs to have ben configured "
+
+        - name: '{{ ansible_name_module }} | template | Copy live router CRD to staging location'
+          ansible.builtin.template:
+            src: "templates/live-ingresscontroller.yaml.j2"
+            dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-live-ingresscontroller.yaml"
+            force: yes
+          vars:
+            node_role: "{{ dedicated_workernodes.role }}"
+            infra_taint_key: "{{ dedicated_workernodes.taint_key }}"
+            infra_taint_value: "{{ dedicated_workernodes.taint_value }}"
+            live_router_instances: "{{ dedicated_workernodes.instance_count }}"
+          register: live_router_cr_copied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | router CRD manifest config '
+          ansible.builtin.command: >
+            {{ openshift_cli }} apply -f {{ live_router_cr_copied.dest }}
+          when:
+            - live_router_cr_copied is defined
+            - live_router_cr_copied.dest is defined
+            - live_router_cr_copied.dest != ""
+          register: live_router_cr_applied
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | router CRD manifest config '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} get po -n openshift-ingress --no-headers -o wide | grep router-live | awk '{print $1}'
+          register: live_router_nodes
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | router machines '
+          ansible.builtin.command: >
+            {{ openshift_cli }} -n openshift-machine-api get machine.machine.openshift.io \
+             -o jsonpath="{.items[?(@.status.nodeRef.name=='{{ item }}')].metadata.name}"
+          loop: "{{ live_router_nodes.stdout_lines }}"
+          register: live_router_machines
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | router machinesets '
+          ansible.builtin.command: >
+            {{ openshift_cli }}  -n openshift-machine-api get machine.machine.openshift.io -o jsonpath="{.items[?(@.status.nodeRef.name=='{{ item }}')].metadata.ownerReferences[0].name}{'\n'}"
+          loop: "{{ live_router_nodes.stdout_lines }}"
+          register: live_router_machinesets
+
+        #- name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | router machinesets '
+        #  ansible.builtin.command: >
+        #    {{ openshift_cli }}  -n openshift-machine-api get machine.machine.openshift.io -o jsonpath="{.items[?(@.status.nodeRef.name=='{{ item }}')].metadata.name}{'\t'}{.items[?(@.status.nodeRef.name=='{{ item }}')].metadata.ownerReferences[0].name}{'\n'}"
+        #  loop: "{{ live_router_nodes.stdout_lines }}"
+        #  register: live_router_machine_machinesets
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch default router to not handle live traffic '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator  --type=merge -p '{"spec":{"routeSelector":{"matchExpressions":[{"key": "shard","operator":"DoesNotExist"}]}}}'
+          register: patch_default_router
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch live router to not handle default traffic '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch ingresscontroller live -n openshift-ingress-operator  --type=merge -p '{"spec":{"routeSelector":{"matchLabels":{"shard": "live"}}}}'
+          register: patch_live_router
+
+    # -------------------------------------------------------------------------
+    #Update default router to handle traffic destined to the live DNS if applicable
+    # --------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | update existing default router if applicable'
+      when:
+        - not create_router_infra_instances is defined or not create_router_infra_instances | bool
+        - not configure_live_sharded_router is defined or not configure_live_sharded_router | bool
+      block:
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch default router config CR to not handle live traffic '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch ingress.config.openshift.io cluster  --type=merge -p '{"spec":{"appsDomain":"{{ live_cluster_domain }}"}}'
+          register: patch_ingress_config
+
+        - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} patch | patch default router to not handle live traffic '
+          ansible.builtin.shell: >
+            {{ openshift_cli }} patch ingresscontroller default -n openshift-ingress-operator --type=merge -p '{"spec":{"routeAdmission":{"namespaceOwnership":"InterNamespaceAllowed"}}}'
+          register: patch_default_router
+
+    # -------------------------------------------------------------------------
+    # Update OpenShift ControlPlaneMachineSet
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Get ControlPlaneMachineSet name'
+      ansible.builtin.shell: >
+         {{ openshift_cli }} get controlplanemachineset.machine.openshift.io -n {{ machine_ns }} -o jsonpath='{.items[*].metadata.name}'
+      register: cpms_name
+      changed_when: false
+
+    - name: '{{ ansible_name_module }} | Patch ControlPlaneMachineSet with new Load Balancers'
+      ansible.builtin.shell: >
+          {{ openshift_cli }} patch controlplanemachineset.machine.openshift.io {{ cpms_name.stdout }} -n {{ machine_ns }} --type=merge -p '{"spec":{"template":{"machines_v1beta1_machine_openshift_io":{"spec":{"providerSpec":{"value":{"loadBalancers":[{"name":"{{ api_lb_name }}","type":"network"},{"name":"{{ live_api_lb_name }}","type":"network"}]}}}}}}}'
+      when:
+        - cpms_name is defined
+        - cpms_name.stdout is defined
+        - cpms_name.stdout != ""
+      register: patch_cpms
+      changed_when: "'patched' in patch_cpms.stdout"
+
+    # -------------------------------------------------------------------------
+    # Update OpenShift Infra MachineSets
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Get Infra MachineSet names'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machineset.machine.openshift.io -n openshift-machine-api --no-headers | grep -i infra | awk '{print $1}'
+      when:
+        - not create_router_infra_instances is defined or not create_router_infra_instances | bool or not configure_live_sharded_router is defined or not configure_live_sharded_router | bool
+      register: infra_ms_names
+      changed_when: false
+
+    - name: '{{ ansible_name_module }} | Patch Infra MachineSets with new Load Balancers'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} patch machineset.machine.openshift.io {{ item }} -n {{ machine_ns }} --type=merge -p '{"spec":{"template":{"spec":{"providerSpec":{"value":{"loadBalancers":[{"name":"{{ ingress_lb_name }}","type":"network"},{"name":"{{ live_ingress_lb_name }}","type":"network"}]}}}}}}'
+      loop: "{{ infra_ms_names.stdout_lines }}"
+      when:
+        - infra_ms_names is defined
+        - infra_ms_names.stdout is defined
+        - infra_ms_names.stdout != ""
+        - infra_ms_names.stdout_lines | length > 0
+      register: patch_infra
+      changed_when: "'patched' in patch_infra.stdout"
+
+    # -------------------------------------------------------------------------
+    # Update OpenShift Infra Machines
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Get Infra Machine names'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machine.machine.openshift.io -n openshift-machine-api --no-headers | grep -i infra | awk '{print $1}'
+      when:
+        - not create_router_infra_instances is defined or not create_router_infra_instances | bool or not configure_live_sharded_router is defined or not configure_live_sharded_router | bool
+      register: infra_machine_names
+
+    - name: '{{ ansible_name_module }} | Patch Infra Machines with new Load Balancers'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} patch machine.machine.openshift.io {{ item }} -n {{ machine_ns }} --type=merge -p '{"spec":{"providerSpec":{"value":{"loadBalancers":[{"name":"{{ ingress_lb_name }}","type":"network"},{"name":"{{ live_ingress_lb_name }}","type":"network"}]}}}}'
+      loop: "{{ infra_machine_names.stdout_lines }}"
+      when:
+        - infra_machine_names is defined
+        - infra_machine_names.stdout is defined
+        - infra_machine_names.stdout != ""
+        - infra_machine_names.stdout_lines | length > 0
+      register: patch_infra_machines
+
+    # -------------------------------------------------------------------------
+    # Add live API LB to Existing Master EC2 Instances via AWS CLI
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Fetch instance IDs for Master and Infra machines'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machines.machine.openshift.io -n {{ machine_ns }} -l 'machine.openshift.io/cluster-api-machine-role in (master)'  -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.status.providerStatus.instanceId}{"\n"}{end}'
+      register: oc_master_machines_output
+      changed_when: false
+
+    - name: '{{ ansible_name_module }} | Parse instance IDs'
+      ansible.builtin.set_fact:
+        master_instance_ids: "{{ oc_master_machines_output.stdout.split() }}"
+      when:
+        - oc_master_machines_output is defined
+        - oc_master_machines_output.rc is defined
+        - oc_master_machines_output.rc == 0
+        - oc_master_machines_output.stdout is defined
+        - oc_master_machines_output.stdout != ""
+
+    - name: '{{ ansible_name_module }} | Abort if no instances found'
+      ansible.builtin.fail:
+        msg: "No instance IDs were found for master or infra nodes."
+      when: master_instance_ids | length == 0
+
+    - name: '{{ ansible_name_module }} | Format targets string for AWS CLI'
+      ansible.builtin.set_fact:
+        master_aws_targets: "{{ master_instance_ids | map('regex_replace', '^(.*)$', 'Id=\\1') | join(' ') }}"
+
+    - name: '{{ ansible_name_module }} | Register instances to NEW Target Groups'
+      ansible.builtin.shell: |
+        {{ aws_cli }} elbv2 register-targets \
+          --target-group-arn {{ item }} \
+          --targets {{ master_aws_targets }}
+      loop:
+        - "{{ live_api_lb_int_tg_arn }}"
+        - "{{ live_api_lb_ext_tg_arn }}"
+      register: master_tg_update_output
+
+    # -------------------------------------------------------------------------
+    # Add live Ingress LB to Existing Infra EC2 Instances via AWS CLI
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | Fetch instance IDs for Master and Infra machines'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get machines.machine.openshift.io -n {{ machine_ns }} -l 'machine.openshift.io/cluster-api-machine-role in (infra)'  -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.status.providerStatus.instanceId}{"\n"}{end}'
+      when:
+        - not create_router_infra_instances is defined or not create_router_infra_instances | bool or not configure_live_sharded_router is defined or not configure_live_sharded_router | bool
+      register: oc_infra_machines_output
+      changed_when: false
+
+    - name: '{{ ansible_name_module }} | Parse instance IDs'
+      ansible.builtin.set_fact:
+        infra_instance_ids: "{{ oc_infra_machines_output.stdout.split() }}"
+      when:
+        - oc_infra_machines_output is defined
+        - oc_infra_machines_output.rc is defined
+        - oc_infra_machines_output.rc == 0
+        - oc_infra_machines_output.stdout is defined
+        - oc_infra_machines_output.stdout != ""
+
+    - name: '{{ ansible_name_module }} | Abort if no instances found'
+      ansible.builtin.fail:
+        msg: "No instance IDs were found for master or infra nodes."
+      when: infra_instance_ids | length == 0
+
+    - name: '{{ ansible_name_module }} | Format targets string for AWS CLI'
+      ansible.builtin.set_fact:
+        infra_aws_targets: "{{ infra_instance_ids | map('regex_replace', '^(.*)$', 'Id=\\1') | join(' ') }}"
+
+    - name: '{{ ansible_name_module }} | Register instances to NEW Target Groups'
+      ansible.builtin.shell: |
+        {{ aws_cli }} elbv2 register-targets \
+          --target-group-arn {{ item }} \
+          --targets {{ infra_aws_targets }}
+      loop:
+        - "{{ live_ingress_lb_https_tg_arn }}"
+        - "{{ live_ingress_lb_http_tg_arn }}"
+      register: infra_tg_update_output
+
+    - name: '{{ ansible_name_module }} | Pause to allow AWS health checks to pass'
+      ansible.builtin.pause:
+        seconds: 60
+        prompt: "Waiting 60 seconds for Master/Infra instances to become 'healthy' in the new Target Groups..."
+
+    # -------------------------------------------------------------------------
+    # Add kyverno route mutation policy to add routes for the live cluster DNS
+    # -------------------------------------------------------------------------
+    - name: '{{ ansible_name_module }} | template | Copy route mutation clusterrole to staging location'
+      ansible.builtin.copy:
+        src: "templates/live-route-mutation-clusterrole.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-live-route-mutation-clusterrole.yaml"
+        force: yes
+      register: route_mutation_cr_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |route mutation cluster manifest config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ route_mutation_cr_copied.dest }}
+      when:
+        - route_mutation_cr_copied is defined
+        - route_mutation_cr_copied.dest is defined
+        - route_mutation_cr_copied.dest != ""
+      register: route_mutation_cr_applied
+
+    - name: '{{ ansible_name_module }} | template | Copy route mutation clusterrolebinding to staging location'
+      ansible.builtin.copy:
+        src: "templates/live-route-mutation-clusterrolebinding.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-live-route-mutation-clusterrolebinding.yaml"
+        force: yes
+      register: route_mutation_crb_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |route mutation CRB manifest config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ route_mutation_crb_copied.dest }}
+      when:
+        - route_mutation_crb_copied is defined
+        - route_mutation_crb_copied.dest is defined
+        - route_mutation_crb_copied.dest != ""
+      register: route_mutation_crb_applied
+
+    - name: '{{ ansible_name_module }} | template | Copy route mutation CM to staging location'
+      ansible.builtin.template:
+        src: "templates/live-route-mutation-policy-cm.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-live-route-mutation-policy-cm.yaml"
+        force: yes
+      register: route_mutation_cm_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  route mutation CM manifest config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ route_mutation_cm_copied.dest }}
+      when:
+        - route_mutation_cm_copied is defined
+        - route_mutation_cm_copied.dest is defined
+        - route_mutation_cm_copied.dest != ""
+      register: route_mutation_cm_applied
+
+    - name: '{{ ansible_name_module }} | copy | Render and stream route mutation policy'
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.template', 'templates/live-route-mutation-policy.yaml.j2') }}"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-live-route-mutation-policy.yaml"
+        force: yes
+      vars:
+        domain_config_shard: "{{ live_router_name if configure_live_sharded_router is defined and create_router_infra_instances | bool and create_router_infra_instances is defined and create_router_infra_instances | bool else '' }}"
+      register: route_mutation_policy_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply |  route mutation policy  manifest config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ route_mutation_policy_copied.dest }}
+      when:
+        - route_mutation_policy_copied is defined
+        - route_mutation_policy_copied.dest is defined
+        - route_mutation_policy_copied.dest != ""
+      register: route_mutation_policy_applied
+
+    - name: '{{ ansible_name_module }} | Completion Status'
+      ansible.builtin.debug:
+        msg: >
+          Migration complete via shell commands. CPMS and Infra MachineSets have been updated.
+          {{ master_instance_ids | length }} Master and {{ infra_instance_ids | length }} Infra instances have been migrated to the new AWS Target Groups.
+

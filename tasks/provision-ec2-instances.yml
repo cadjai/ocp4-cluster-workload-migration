@@ -1,0 +1,194 @@
+---
+- name: '{{ ansible_name_module }} | Ensure required variables are set'
+  ansible.builtin.assert:
+    that:
+      - dedicated_workernodes is defined and dedicated_workernodes != ""
+      - dedicated_workernodes.instance_count is defined and dedicated_workernodes.instance_count | int > 0
+    msg: "The dedicated_workernodes structure must be set and valid"
+
+- name: '{{ ansible_name_module }} | Retrieve Infrastructure ID'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get -o jsonpath='{.status.infrastructureName}{"\n"}' \
+       infrastructure cluster
+  register: cluster_infra_id
+
+- name: '{{ ansible_name_module }} | Retrieve Infrastructure Region'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get -o jsonpath='{.status.platformStatus.aws.region}{"\n"}' \
+       infrastructure cluster
+  register: cluster_aws_region
+
+- name: '{{ ansible_name_module }} | Retrieve Worker uniq AZs '
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine.machine.openshift.io -A -o json  | jq -r '.items[] | select(.metadata.name | contains("worker")) | .spec.providerSpec.value.placement.availabilityZone' | uniq
+  register: worker_aws_zones
+
+- name: '{{ ansible_name_module }} | Retrieve worker Instance Profile name'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.iamInstanceProfile.id}{"\n"}'
+  register: cluster_aws_worker_profile
+
+- name: '{{ ansible_name_module }} | Retrieve master machine name'
+  ansible.builtin.shell:
+    cmd: "{{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep master | head -n 1 | awk '{print $1}'"
+  register: master_machine_name
+
+- name: '{{ ansible_name_module }} | Retrieve Infrastructure VPC'
+  ansible.builtin.command: >
+    {{ openshift_cli }} get machine {{ master_machine_name.stdout  }} -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.subnet.id}{"\n"}'
+  register: cluster_aws_vpc_subnet
+
+- name: '{{ ansible_name_module }} | Retrieve Worker security group'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.securityGroups[0].filters[0].values[0]}{"\n"}'
+  register: worker_sg
+
+- name: '{{ ansible_name_module }} | Retrieve Worker IAM instance profile ID'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.iamInstanceProfile.id}{"\n"}'
+  register: worker_iam_profile_name
+
+- name: '{{ ansible_name_module }} | Retrieve Worker AMI ID'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine $({{ openshift_cli }} get machine --no-headers -n openshift-machine-api | grep worker | head -n+1 | awk '{print $1}') -n openshift-machine-api -o jsonpath='{.spec.providerSpec.value.ami.id}{"\n"}'
+  register: worker_ami_id
+
+- name: '{{ ansible_name_module }} | Retrieve Worker subnets'
+  ansible.builtin.shell: >
+    {{ openshift_cli }} get machine.machine.openshift.io -A -o json  | jq -r '.items[] | select(.metadata.name | contains("worker")) | .spec.providerSpec.value.subnet.id' | uniq
+  register: worker_subnets
+
+- name:  '{{ ansible_name_module }} | Set unique availability zones facts'
+  ansible.builtin.set_fact:
+    unique_aws_zones_dedicated: "{{ worker_aws_zones.stdout_lines }}"
+
+- name:  '{{ ansible_name_module }} | Set missing nodes count facts'
+  ansible.builtin.set_fact:
+    missing_node_machine_count_dedicated: "{{ (aws_zones | length) - (unique_aws_zones_dedicated | length) }}"
+    dedicated_replica_count_per_az: "{{ (dedicated_workernodes.instance_count | int / (aws_zones | length)) | int }}"
+    total_dedicated_az_one: "{{ ((dedicated_workernodes.instance_count | int / (aws_zones | length)) | int) + ((aws_zones | length) - (unique_aws_zones_dedicated | length)) | int }}"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.template | Copy specialworkernode.machineset template to staging location'
+  ansible.builtin.template:
+    src: "templates/special-worker-node-machineset.yml.j2"
+    dest: "{{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ key_cnt }}-worker-node-machineset.yml"
+    force: yes
+  vars:
+    infra_id: "{{ cluster_infra_id.stdout }}"
+    aws_az: "{{ unique_aws_zones_dedicated[key_cnt] }}"
+    aws_node_subnet: "{{ worker_subnets.stdout_lines[0] }}"
+    node_sg: "{{ worker_sg.stdout }}"
+    node_iam_profile: "{{ worker_iam_profile_name.stdout }}"
+    node_role: "{{ dedicated_workernodes.role | d('worker', true) }}"
+    node_type: "{{ dedicated_workernodes.type | d('worker', true) }}"
+    node_replica_count: "{{ dedicated_workernodes.node_count | default('1', true) }}"
+    node_ami: "{{ dedicated_workernodes.ami | d('ami-0c14637fd34c78ae8',true) }}"
+    node_block_size: "{{ dedicated_workernodes.block_size | d('256', true) }}"
+    node_volume_type: "{{ dedicated_workernodes.volume_type | d('gp3', true) }}"
+    node_instance_type: "{{ dedicated_workernodes.instance_type | d('g4dn.xlarge', true) }}"
+    node_gpu_count: "{{ dedicated_workernodes.gpu_count | d('0', true) }}"
+    node_memory_size: "{{ dedicated_workernodes.mem_size | d('0', true) }}"
+    node_cpu_count: "{{ dedicated_workernodes.cpu_count | d('0', true) }}"
+    node_owner: "{{ dedicated_workernodes.requester | d('', true) }}"
+    node_env: "{{ dedicated_workernodes.env | d('dev', true) }}"
+    node_taint_value: "{{ dedicated_workernodes.taint_value | d('reserved', true) }}"
+    node_taint_key: "{{ dedicated_workernodes.taint_key | d('tenant', true) }}"
+    add_no_execute_taint: "{{ dedicated_workernodes.use_noexecute_taint | d('true', true) }}"
+    node_autoscaler_name_suffix: "{{ dedicated_workernodes.autoscaler_name_suffix | d('', true) }}"
+    node_autoscaler_min: "{{ dedicated_workernodes.autoscaler_min | d('0', true) }}"
+    node_autoscaler_max: "{{ dedicated_workernodes.autoscaler_max | d('0', true) }}"
+    add_node_autoscaler: "{{ dedicated_workernodes.add_autoscaler | d('false', true) }}"
+    node_autoscaler_label: "{{ dedicated_workernodes.autoscaler_label | d('', true) }}"
+    node_lbs: "{{ dedicated_workernodes.lbs | d([], true) }}"
+    machineset_name: "{{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ dedicated_workernodes.autoscaler_name_suffix | d('', true) }}"
+  loop: "{{ unique_aws_zones_dedicated }}"
+  loop_control:
+    index_var: key_cnt
+  register: dedicated_nodes_machineset_config_copied
+
+- name: '{{ ansible_name_module }} | Adjust GM replica count for AZ0 if needed'
+  when: missing_node_machine_count_dedicated | int > 0
+  ansible.builtin.replace:
+    regexp: ' replicas: {{ dedicated_replica_count_per_az }}'
+    replace: ' replicas: {{ total_dedicated_az_one }}'
+    path: "{{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az0-worker-node-machineset.yml"
+  vars:
+    node_owner: "{{ dedicated_workernodes.requester | d('', true) }}"
+
+- name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy special worker node machinesets '
+  vars:
+    node_owner: "{{ dedicated_workernodes.requester | d('', true) }}"
+  command: >
+    {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ key_cnt }}-worker-node-machineset.yml
+  loop: "{{ unique_aws_zones_dedicated }}"
+  loop_control:
+    index_var: key_cnt
+  register: dedicated_nodes_machineset_created
+
+- name: '{{ ansible_name_module }} | ansible.builtin.wait_for | wait for machine to be created'
+  ansible.builtin.wait_for:
+    timeout: 300
+  delegate_to: localhost
+
+## To properly function and reduce cost associated with these special worker  resources we will use the cluster autoscaler to manage the machine autoscaler associated with each special worker node  deployment
+- name: '{{ ansible_name_module }} | block | Ensure The cluster autoscaler is enabled'
+  when:
+    - dedicated_workernodes.add_autoscaler is defined
+    - dedicated_workernodes.add_autoscaler | bool
+  block:
+    - name: '{{ ansible_name_module }} | Check if  ClusterAutoscaler exist'
+      ansible.builtin.command: >
+        {{ openshift_cli }} get  clusterautoscalers.autoscaling.openshift.io default
+      ignore_errors: yes
+      register: clusterautoscaler_test
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.template | Copy Cluster Autoscaler template to staging location'
+      ansible.builtin.template:
+        src: "../cluster_post-install_day_two/templates/clusterautoscaler.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/clusterautoscaler.yml"
+        force: yes
+      when:
+        - clusterautoscaler_test is defined
+        - clusterautoscaler_test.rc is defined
+        - clusterautoscaler_test.rc != "0"
+        - clusterautoscaler_test.stderr is defined
+        - '" not found" in clusterautoscaler_test.stderr '
+      register: clusterautoscaler_config_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy cluster autoscaler '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/clusterautoscaler.yml
+      when:
+        - clusterautoscaler_config_copied is defined
+        - clusterautoscaler_config_copied.dest is defined
+        - clusterautoscaler_config_copied.dest != ""
+      register: clusterautoscaler_config_deployed
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.template | Copy dedicated_workernodes.machine autoscaler template to staging location'
+      ansible.builtin.template:
+        src: "templates/special-worker-node-machineautoscaler.yml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ key_cnt }}-worker-node-machineautoscaler.yml"
+        force: yes
+      vars:
+        infra_id: "{{ cluster_infra_id.stdout }}"
+        aws_az: "{{ unique_aws_zones_dedicated[key_cnt] }}"
+        node_role: "{{ dedicated_workernodes.role | d('worker', true) }}"
+        node_owner: "{{ dedicated_workernodes.requester | d('tenant', true) }}"
+        machineset_name: "{{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ dedicated_workernodes.autoscaler_name_suffix | d('', true) }}"
+        machine_autoscaler_replica_min: "{{ dedicated_workernodes.autoscaler_min | d('0', true) }}"
+        machine_autoscaler_replica_max: "{{ dedicated_workernodes.autoscaler_max | d('0', true) }}"
+      loop: "{{ unique_aws_zones_dedicated }}"
+      loop_control:
+        index_var: key_cnt
+      register: dedicated_nodes_machine_autoscaler_config_copied
+
+    - name: '{{ ansible_name_module }} | ansible.builtin.command:{{ openshift_cli }} apply | deploy gm worker node machine autoscaler '
+      vars:
+        node_owner: "{{ dedicated_workernodes.requester | d('tenant', true) }}"
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ staging_dir | d('/tmp', true) }}/{{ node_owner }}-az{{ key_cnt }}-worker-node-machineautoscaler.yml
+      loop: "{{ unique_aws_zones_dedicated }}"
+      loop_control:
+        index_var: key_cnt
+      register: dedicated_nodes_machine_autoscaler_created
+

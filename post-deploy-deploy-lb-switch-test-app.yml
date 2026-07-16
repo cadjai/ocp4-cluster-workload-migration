@@ -1,0 +1,145 @@
+- name: 'Deploy Sample test app  | post-deploy-deloy-lb-switch-test-app.yml'
+  hosts: localhost
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  vars_files:
+    - '../vars/vault.yml'
+    - '../vars/bastion.yml'
+    - '../vars/cluster.yml'
+    - '../vars/fabric.yml'
+  vars:
+    module: "deploy-sample-app"
+    ansible_name_module: "Deploy Sample App | {{ module }}"
+
+  pre_tasks:
+    - name: '{{ ansible_name_module }} | {{ openshift_cli }} whoami | check if there is valid session'
+      command: >
+        {{ openshift_cli }} whoami
+      ignore_errors: yes
+      register: existing_session
+
+    - name: '{{ ansible_name_module }} | import_tasks | Conditional import of ocp-cluster-login role'
+      import_tasks: ../roles/ocp-cluster-login/tasks/main.yml
+      when:
+        - existing_session.rc > 0
+  tasks:
+    - name: '{{ ansible_name_module }} | Create sample app Namespace'
+      block:
+        ##### Adding this to bypass restrictions on creating project with names starting with openshift  #####
+        - name: '{{ ansible_name_module }} | set sample app name Namespace'
+          ansible.builtin.set_fact:
+            sample_app_namespace: "simple-server-ns"
+          when:
+            - not sample_app_namespace is defined or sample_app_namespace == ""
+
+        - name: '{{ ansible_name_module }} | set sample_app_repo_name'
+          ansible.builtin.set_fact:
+            sample_app_repo_name: '{{ local_repository }}/ocp-deploy-devops'
+          when:
+            - not sample_app_repo_name is defined or sample_app_repo_name == ""
+
+        - name: '{{ ansible_name_module }} | set sample_app_image_name'
+          ansible.builtin.set_fact:
+            sample_app_image_name: "devops-nginx-rhel9"
+          when:
+            - not sample_app_image_name is defined or sample_app_image_name == ""
+
+        - name: '{{ ansible_name_module }} | set sample_app_image_tag'
+          ansible.builtin.set_fact:
+            sample_app_image_tag: "latest"
+          when:
+            - not sample_app_image_tag is defined or sample_app_image_tag == ""
+
+        - name: '{{ ansible_name_module }} | set use_command '
+          ansible.builtin.set_fact:
+            use_command: "false"
+          when:
+            - not use_command is defined or use_command == ""
+
+        - name: '{{ ansible_name_module }} | set mount_conf'
+          ansible.builtin.set_fact:
+            mount_conf: "true"
+          when:
+            - not mount_conf is defined or mount_conf == ""
+
+        - name: '{{ ansible_name_module }} |  Create etcd-backup Namespace'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create namespace '{{ sample_app_namespace }}'
+          failed_when: "sample_app_ns_created.rc >=1 and not ' already exists' in sample_app_ns_created.stderr"
+          when:
+            - "'openshift' in sample_app_namespace"
+          register: sample_app_ns_created
+
+        - name: '{{ ansible_name_module }} |  Create etcd-backup Namespace'
+          ansible.builtin.command: >
+            {{ openshift_cli }} new-project '{{ sample_app_namespace }}' \
+              --display-name='{{ sample_app_namespace }}' \
+              --description='{{ sample_app_namespace }}'
+          failed_when: "sample_app_ns_created.rc >=1 and not ' already exists' in sample_app_ns_created.stderr"
+          when:
+            - "not 'openshift' in sample_app_namespace"
+          register: sample_app_ns_created
+
+    - name: '{{ ansible_name_module }} | Create Pull secret'
+      block:
+        - name: '{{ ansible_name_module }} |  Create Pull Secret from config json'
+          ansible.builtin.command: >
+            {{ openshift_cli }} create \
+             secret generic {{ image_pullsecret_name | default('pull-secret', true) }} \
+             --type=kubernetes.io/dockerconfigjson \
+             --from-file=.dockerconfigjson={{ image_pullsecret_json }} \
+             -n '{{ sample_app_namespace }}'
+          failed_when: "pullsecret_created.rc >=1 and not ' already exists' in pullsecret_created.stderr"
+          when:
+            - create_pullsecret is defined
+            - create_pullsecret | bool
+            - image_pullsecret_json is defined
+            - image_pullsecret_json != ""
+          register: pullsecret_created
+
+    - name: '{{ ansible_name_module }} | template | Copy sample deployment manifest to staging location'
+      ansible.builtin.template:
+        src: "templates/lb-test-app.yaml.j2"
+        dest: "{{ staging_dir | d('/tmp', true) }}/{{ cluster_name }}-lb-test-app.yaml"
+        force: yes
+      register: sample_app_copied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} apply | sample deployment manifest config '
+      ansible.builtin.command: >
+        {{ openshift_cli }} apply -f {{ sample_app_copied.dest }}
+      when:
+        - sample_app_copied is defined
+        - sample_app_copied.dest is defined
+        - sample_app_copied.dest != ""
+      register: sample_app_applied
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | sample app route name'
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get route -n {{ sample_app_namespace }} --no-headers | head -n1 | awk '{print $1}'
+      when:
+        - sample_app_applied is defined
+        - sample_app_applied.rc is defined
+        - sample_app_applied.rc == 0
+      register: sample_app_route_name
+
+    - name: '{{ ansible_name_module }} | command:{{ openshift_cli }} get | sample app route '
+      ansible.builtin.shell: >
+        {{ openshift_cli }} get route {{ sample_app_route_name.stdout }} -n {{ sample_app_namespace }} -o jsonpath='{.spec.host}'
+      when:
+        - sample_app_route_name is defined
+        - sample_app_route_name.rc is defined
+        - sample_app_route_name.rc == 0
+        - sample_app_route_name.stdout is defined
+        - sample_app_route_name.stdout != ""
+      register: sample_app_route
+
+    - name: Test that the  web server is up and can be connected to
+      ansible.builtin.command: >
+        curl -v http://{{ sample_app_route.stdout }}
+      when:
+        - sample_app_route is defined
+        - sample_app_route.rc is defined
+        - sample_app_route.rc == 0
+        - sample_app_route.stdout is defined
+        - sample_app_route.stdout != ""
+      register: nginx_running

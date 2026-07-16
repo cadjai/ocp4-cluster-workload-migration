@@ -1,0 +1,174 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-html-content
+  namespace: {{ sample_app_namespace | d('simple-server-ns', true) }}
+data:
+  index.html: |+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>Hello from OpenShift</title>
+        <style>
+            body { font-family: sans-serif; text-align: center; margin-top: 10%; background: #f4f6f9; color: #333; }
+            .card { background: white; padding: 30px; border-radius: 8px; display: inline-block; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+            h1 { color: #0066cc; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h1>Hello from Nginx running inside OpenShift!</h1>
+            <p><strong>Current Domain:</strong> <span id="domain">Loading...</span></p>
+        </div>
+        <script>
+            document.getElementById('domain').textContent = window.location.hostname;
+        </script>
+    </body>
+    </html>
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+  namespace: {{ sample_app_namespace | d('simple-server-ns', true) }}
+data:
+  nginx.conf: |+
+    worker_processes auto;
+    error_log /dev/stdout info;
+    include /usr/share/nginx/modules/*.conf;
+    include /etc/nginx/conf.d/*.conf;
+    pid /run/nginx.pid;
+
+    events {
+      worker_connections 1024;
+    }
+
+    http {
+
+      server {
+        error_log /dev/stdout;
+        listen 8080;
+        location / {
+          root /usr/share/nginx/html;
+        }
+      }
+      autoindex on;
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ sample_app_name | default('simple-server', true) }}
+  namespace: {{ sample_app_namespace | d('simple-server-ns', true) }}
+  labels:
+    app: {{ sample_app_name | d('simple-server', true) }}
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+  - name: https
+    protocol: TCP
+    port: 8443
+    targetPort: 8443
+  selector:
+    app: {{ sample_app_name | d('simple-server', true) }}
+  sessionAffinity: None
+  type: ClusterIP
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ sample_app_route | d('simple-server', true) }}-http
+  namespace: {{ sample_app_namespace | d('simple-server-ns', true) }}
+  labels:
+    app: {{ sample_app_name | d('simple-server', true) }}
+spec:
+  to:
+    kind: Service
+    name: {{ sample_app_name | d('simple-server', true) }}
+    weight: 100
+  port:
+    targetPort: http
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ sample_app_route | d('simple-server', true) }}-https
+  namespace: {{ sample_app_namespace | d('simple-server-ns', true) }}
+  labels:
+    app: {{ sample_app_name | d('simple-server', true) }}
+spec:
+  to:
+    kind: Service
+    name: {{ sample_app_name | d('simple-server', true) }}
+    weight: 100
+  port:
+    targetPort: https
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: {{ sample_app_name | default('simple-server', true) }}
+  namespace: {{ sample_app_namespace | default('simple-server-ns',true) }}
+  labels:
+    app: {{ sample_app_name | d('simple-server', true) }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ sample_app_name | default('simple-server', true) }}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: {{ sample_app_name | default('simple-server', true) }}
+    spec:
+      containers:
+        - name: {{ sample_app_image_name }}
+          image: {{ registry_host_fqdn }}/{{ sample_app_repo_name |default('ado/common', true) }}/{{ sample_app_image_name | default('apache-alpine', true) }}:{{ sample_app_image_tag | default('2.4-ocp', true) }}
+{% if use_command is defined and use_command | bool %}
+          command:
+            - /bin/sh
+            - '-c'
+            - |
+              sleep infinity
+{% endif %}
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 8443
+              name: https
+          resources:
+            limits:
+              memory: "256Mi"
+            requests:
+              memory: "128Mi"
+{% if mount_conf is defined and mount_conf | bool %}
+          volumeMounts:
+          - name: nginx-config-volume
+            mountPath: /etc/nginx/nginx.conf
+            subPath: nginx.conf
+          - name: html-volume
+            mountPath: /usr/share/nginx/html
+            #subPath: index.html
+      volumes:
+      - name: nginx-config-volume
+        configMap:
+          name: nginx-conf
+      - name: html-volume
+        configMap:
+          name: nginx-html-content
+{% endif %}

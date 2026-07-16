@@ -1,0 +1,105 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  annotations:
+{% if node_gpu_count is defined and node_gpu_count | int > 0 %}
+    machine.openshift.io/GPU: "{{ node_gpu_count }}"
+{% endif %}
+{% if node_memory_size is defined and node_memory_size | int > 0 %}
+    machine.openshift.io/memoryMb: "{{ node_memory_size }}"
+{% endif %}
+{% if node_cpu_count is defined and node_cpu_count | int > 0 %}
+    machine.openshift.io/vCPU: "{{ node_cpu_count }}"
+{% endif %}
+{% if add_node_autoscaler is defined and add_node_autoscaler | bool %}
+    autoscaling.openshift.io/machineautoscaler: openshift-machine-api/{{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ node_autoscaler_name_suffix | d('', true) }}
+{% endif %}
+{% if node_autoscaler_label is defined and node_autoscaler_label != "" %}
+    capacity.cluster-autoscaler.kubernetes.io/labels: {{ node_autoscaler_label }}
+{% endif %}
+{% if node_autoscaler_min is defined and node_autoscaler_min | int > 0 %}
+    machine.openshift.io/cluster-api-autoscaler-node-group-min-size: '{{ node_autoscaler_min }}'
+{% endif %}
+{% if node_autoscaler_max is defined and node_autoscaler_max | int > 0 %}
+    machine.openshift.io/cluster-api-autoscaler-node-group-max-size: '{{ node_autoscaler_max }}'
+{% endif %}
+  labels:
+    machine.openshift.io/cluster-api-cluster: {{ infra_id }}
+  name: {{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ node_autoscaler_name_suffix | d('', true) }}
+  namespace: openshift-machine-api
+spec:
+  replicas: {{ node_replica_count }}
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: {{ infra_id }}
+      machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ node_autoscaler_name_suffix | d('', true) }}
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: {{ infra_id }}
+        machine.openshift.io/cluster-api-machine-role: {{ node_role }}
+        machine.openshift.io/cluster-api-machine-type: {{ node_type }}
+        machine.openshift.io/cluster-api-machineset: {{ infra_id }}-{{ node_role }}-{{ aws_az }}{{ node_autoscaler_name_suffix | d('', true) }}
+    spec:
+      metadata:
+        labels:
+          node-role.kubernetes.io/{{ node_role }}: ""
+      taints:
+      - effect: NoSchedule
+        key: {{ node_taint_key }}
+        value: {{ node_taint_value }}
+{% if add_no_execute_taint is defined and add_no_execute_taint | bool %}
+      - effect: NoExecute
+        key: {{ node_taint_key }}
+        value: {{ node_taint_value }}
+{% endif %}
+      providerSpec:
+        value:
+          ami:
+            id: {{ node_ami }}
+          apiVersion: awsproviderconfig.openshift.io/v1beta1
+          blockDevices:
+          - ebs:
+              encrypted: true
+              kmsKey:
+                arn: ""
+              volumeSize: {{ node_block_size }}
+              volumeType: {{ node_volume_type }}
+          credentialsSecret:
+            name: aws-cloud-credentials
+          deviceIndex: 0
+          iamInstanceProfile:
+            id: {{ node_iam_profile }}
+          instanceType: {{ node_instance_type }}
+          kind: AWSMachineProviderConfig
+          metadata:
+            creationTimestamp: null
+          placement:
+{% if use_dedicated_instance is defined and use_dedicated_instance | bool %}
+            tenancy: dedicated
+{% endif %}
+            availabilityZone: {{ aws_az }}
+            region: {{ aws_region }}
+          securityGroups:
+          - filters:
+            - name: tag:Name
+              values:
+              - {{ node_sg }}
+          subnet:
+            id: {{ aws_node_subnet }}
+          tags:
+          - name: kubernetes.io/cluster/{{ infra_id }}
+            value: owned
+          - name: env_type
+            value: {{ node_env | default('dev', true) }}
+          - name: owner
+            value: {{ node_owner | default('tenant', true) }}
+          userDataSecret:
+            name: worker-user-data
+{% if node_lbs is defined and node_lbs | d([],true) | length > 0 %}
+          loadBalancers:
+{% for lb in node_lbs %}
+            - name: {{ lb.name }}
+              type: {{ lb.type }}
+{% endfor %}
+{% endif %}
