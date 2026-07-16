@@ -47,9 +47,9 @@ Each environment pair (Blue and Green) will host an independent cluster associat
 
 ## Architecture Diagram
 
-![](../images/ocp-aws-network-architecture-onpremdns-defaultrouter.jpg)
+![](images/ocp-aws-network-architecture-onpremdns-defaultrouter.jpg)
 
-![](../images/ocp-aws-network-architecture-onpremdns-sharded.jpg)
+![](images/ocp-aws-network-architecture-onpremdns-sharded.jpg)
 
 The Routing Layer (New): A primary, external-facing ELB that hosts public application routes. This layer does not run workloads; it simply points to the active cluster.
 
