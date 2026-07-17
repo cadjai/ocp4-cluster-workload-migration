@@ -1,4 +1,4 @@
-# AWS Mutli Clusters behind a live Load Balancer 
+# AWS Multi Clusters behind a live Load Balancer 
 
 To increase platform resiliency and accelerate our response to unpredictable events or disasters, we are adopting a Blue-Green deployment architecture for our clusters.
 
